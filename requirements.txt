@@ -1,0 +1,7 @@
+Django>=4.3
+djangorestframework
+djangorestframework-simplejwt
+psycopg2-binary
+python-dotenv
+drf-yasg==1.21.7
+django-cors-headers
