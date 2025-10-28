@@ -1,16 +1,31 @@
-
-
 #  CTF Backend
 
 This is the **backend service** for the Capture The Flag (CTF) platform.
 It’s built with **Django + Django REST Framework**, using **PostgreSQL** as the database.
 
+---
+##  Installation and Setup
+
+Follow the steps below to install dependencies and run the project in your local environment.
 
 ---
 
-##  Environment Setup
+##  Python requirement
 
-Create a `.env` file in the `ctf_backend/` directory (if not already present):
+Please ensure you have the following installed:
+
+-`python:3.11`
+
+---
+
+### 1. Clone the Repository
+```bash
+git clone git@github.com:b-rabbit091/ctf_be.git
+cd ctf_be
+```
+
+### 2. Environment variables
+Create a `.env` file inside the `ctf_be/` directory. Replace with corresponding values.
 
 ```
 DEBUG=1
@@ -24,35 +39,40 @@ POSTGRES_PORT=5432
 EMAIL_HOST_PASSWORD=hostpassword
 EMAIL_HOST_USER='user@email.com'
 
-
 ```
 
+### 3.Running Locally
 
-## 🧪 Running Locally (Without Docker)
-
-If you prefer to run it manually:
-
-```
-# Install python version python:3.11
-
-# Create a virutal env
+a . Create a virutal env
+```bash 
     python -m venv venv 
+```
 
-# Active virtual env
-    source venv/bin/active (Linux,mac)
-    ./venv/bin/activate (windows)
+b . Active virtual env in Linux, macOS as
+``` bash 
+       source venv/bin/active
+```
+OR in windows as
+```
+./venv/Scripts/activate 
+```
 
-# Install dependencies
+c. Install dependencies
+```bash
 pip install -r requirements.txt
+````
 
-# Run migrations
+d. Run migrations
+```bash 
 python manage.py migrate
+````
 
-# Start the server
+e. Start the server
+```bash
 python manage.py runserver
 ```
 
-Then visit:
+f. Then visit:
 
 ```
 http://127.0.0.1:8000/
@@ -60,9 +80,9 @@ http://127.0.0.1:8000/
 
 ---
 
-## 🧾 API Documentation (Swagger)
+### 4. API Documentation (Swagger)
 
-If Swagger is enabled, visit:
+Swagger api documentation :
 
 ```
 http://localhost:8000/swagger/
