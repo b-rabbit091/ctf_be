@@ -13,7 +13,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from .models import Role, EmailVerificationToken
 from .permissions import IsAdminUser, IsOwnerOrAdmin
 from .serializers import RegisterSerializer, MyTokenObtainPairSerializer
-from .utils import send_verification_email, generate_secure_uuid
+from .utils import send_verification_email, generate_secure_uuid, send_reset_password_email
 
 User = get_user_model()
 
@@ -36,7 +36,7 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['list', 'destroy', 'update', 'partial_update']:
             permission_classes = [IsAuthenticated, IsAdminUser]
-        elif self.action == 'register':
+        elif self.action in ['register', 'verify_reset_user_password']:
             permission_classes = []
         else:
             permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
@@ -74,6 +74,35 @@ class UserViewSet(viewsets.ModelViewSet):
                 {"error": "Error while registering student."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+    @action(detail=False, methods=['post'], permission_classes=[], url_path='verify-reset-password')
+    def verify_reset_user_password(self, request):
+        """
+        Generate Password reset token and sent to user email
+        """
+        email = request.data.get('email')
+
+        if not email:
+            return Response({"error": "Email  required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({"error": "Email role does not exist"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+
+            token = generate_secure_uuid()
+            EmailVerificationToken.objects.create(
+                user=user,
+                token=token,
+                role=user.role,
+                expires_at=timezone.now() + timedelta(days=2)
+            )
+            send_reset_password_email(user, token)
+        except Exception as e:
+            return Response({"error": "Error while registering admin."}, status.HTTP_400_BAD_REQUEST)
+
+        return Response({"detail": "Reset password email sent to the new admin."}, status=status.HTTP_200_OK)
 
 
 # ----------------------
@@ -154,7 +183,10 @@ class VerifyEmailView(APIView):
 
         user = token_obj.user
         user.set_password(password)
-        user.role = token_obj.role
+        role = token_obj.role
+        if not role:
+            role = user.role
+        user.role = role
         user.is_active = True
         user.save()
 

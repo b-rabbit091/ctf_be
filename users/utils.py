@@ -36,6 +36,33 @@ Role assigned: {role_name.capitalize()}
     )
 
 
+def send_reset_password_email(user, token):
+    """
+    Sends a verification email to the user.
+    The link contains the token and backend determines the role.
+    """
+    verification_link = f"{settings.BASE_URL}/reset-password?token={token}"
+
+    subject = "CTF Platform Password Reset"
+    message = f"""
+Hello {user.username},
+
+Please set your password by clicking the link below:
+
+{verification_link}
+
+This link is valid for 48 hours.
+"""
+    from_email = settings.DEFAULT_FROM_EMAIL
+    recipient_list = [user.email]
+    send_mail(
+            subject,
+            message,
+            from_email,
+            recipient_list,
+            fail_silently=False,
+        )
+
 import uuid
 from django.conf import settings
 
