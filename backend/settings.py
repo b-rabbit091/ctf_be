@@ -18,6 +18,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 BASE_URL = "http://localhost:5173"
 
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
@@ -42,6 +46,7 @@ INSTALLED_APPS = [
     'users',
     'challenges',
     'submissions',
+    'blogs',
     'drf_yasg',
     "corsheaders",
 
@@ -90,7 +95,7 @@ DATABASES = {
         'NAME': 'ctf_db',
         'USER': 'django_user',
         'PASSWORD': 'password',
-        'HOST': 'db',
+        'HOST': 'localhost',
         'PORT': 5432,
     }
 }
