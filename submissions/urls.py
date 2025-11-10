@@ -1,7 +1,6 @@
-from rest_framework.routers import DefaultRouter
-from .views import SubmissionViewSet
+from django.urls import path
+from .views import PreviousSubmissionsAPIView
 
-router = DefaultRouter()
-router.register(r'submissions', SubmissionViewSet, basename='submissions')
-
-urlpatterns = router.urls
+urlpatterns = [
+    path('previous-submissions/<int:challenge_id>/', PreviousSubmissionsAPIView.as_view(), name='previous-challenge-submissions'),
+]
