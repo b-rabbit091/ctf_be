@@ -1,5 +1,8 @@
 from django.db import models
 from django.contrib.auth import get_user_model
+from django.conf import settings
+
+from challenges.utils import challenge_file_upload_path
 
 User = get_user_model()
 
@@ -43,7 +46,6 @@ class Challenge(models.Model):
     output_format = models.TextField(blank=True, null=True)
     sample_input = models.TextField(blank=True, null=True)
     sample_output = models.TextField(blank=True, null=True)
-    files = models.JSONField(blank=True, null=True, help_text="List of file URLs or paths")
     question_type = models.CharField(max_length=20, choices=QUESTION_TYPE_CHOICES, default='practice')
     solution_type = models.ForeignKey(SolutionType, default=3, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -75,3 +77,25 @@ class TextSolution(models.Model):
     def __str__(self):
         # truncate for readability
         return f"{self.content[:50]}{'...' if len(self.content) > 50 else ''}"
+
+
+class ChallengeFile(models.Model):
+    challenge = models.ForeignKey(
+        Challenge,
+        on_delete=models.CASCADE,
+        related_name="files",
+    )
+    file = models.FileField(upload_to=challenge_file_upload_path)
+    original_name = models.CharField(max_length=255)
+    mime_type = models.CharField(max_length=100, blank=True, null=True)
+    size = models.PositiveIntegerField()
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+
+    def __str__(self):
+        return self.original_name

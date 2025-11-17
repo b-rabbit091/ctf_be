@@ -6,3 +6,4 @@ python-dotenv
 drf-yasg==1.21.7
 django-cors-headers
 pillow
+python-magic

@@ -22,6 +22,12 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 
+# Local storage now; can be overridden with env var later
+DEFAULT_FILE_STORAGE = os.getenv(
+    "DJANGO_DEFAULT_FILE_STORAGE",
+    "django.core.files.storage.FileSystemStorage",
+)
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
