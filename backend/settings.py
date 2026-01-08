@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 import os
 from pathlib import Path
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,7 +21,6 @@ BASE_URL = "http://localhost:5173"
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
-
 
 # Local storage now; can be overridden with env var later
 DEFAULT_FILE_STORAGE = os.getenv(
@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     'challenges',
     'submissions',
     'blogs',
+    'dashboard',
+    'chat',
     'drf_yasg',
     "corsheaders",
 
@@ -94,7 +96,6 @@ AUTH_USER_MODEL = 'users.User'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# Database
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -105,6 +106,17 @@ DATABASES = {
         'PORT': 5432,
     }
 }
+
+# DATABASES = {
+#     "default": dj_database_url.config(
+#         default=os.environ.get(
+#             "DATABASE_URL",
+#             "postgres://django_user:password@db:5432/ctf_db",  # fallback for local/docker-compose
+#         ),
+#         conn_max_age=600,
+#     )
+# }
+
 
 # settings.py
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -123,6 +135,9 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    "DEFAULT_THROTTLE_RATES": {
+        "chat_practice": "30/min",  # tune as you like
+    },
 }
 
 from datetime import timedelta

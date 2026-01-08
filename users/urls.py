@@ -2,9 +2,10 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from .views import UserViewSet, MyTokenObtainPairView, AdminInviteViewSet, VerifyEmailView
+from .views import UserViewSet, MyTokenObtainPairView, AdminInviteViewSet, VerifyEmailView, UserGroupViewSet
 
 router = DefaultRouter()
+router.register(r'groups', UserGroupViewSet, basename='user-group')
 router.register(r'', UserViewSet, basename='users')
 router.register(r'admin-invite', AdminInviteViewSet, basename='admin-invite')
 

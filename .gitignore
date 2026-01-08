@@ -1,2 +1,9 @@
 venv
 .env
+.venv/
+# ---- IDEs / editors ----
+.idea/
+.vscode/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace

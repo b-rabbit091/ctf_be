@@ -1,12 +1,27 @@
-#!/bin/sh
+#!/usr/bin/env sh
+set -eu
 
-echo "Waiting for database..."
-while ! nc -z $POSTGRES_HOST $POSTGRES_PORT; do
+: "${POSTGRES_HOST:?POSTGRES_HOST is required}"
+: "${POSTGRES_PORT:?POSTGRES_PORT is required}"
+: "${PORT:=8000}"
+
+echo "Waiting for database at ${POSTGRES_HOST}:${POSTGRES_PORT}..."
+while ! nc -z "${POSTGRES_HOST}" "${POSTGRES_PORT}"; do
   sleep 1
 done
 echo "Database ready!"
 
-python manage.py makemigrations
-python manage.py migrate
+echo "Running migrations..."
+python manage.py migrate --noinput
+
+echo "Collecting static..."
 python manage.py collectstatic --noinput
-python manage.py runserver 0.0.0.0:8000
+
+echo "Starting Gunicorn..."
+exec gunicorn backend.wsgi:application \
+  --bind 0.0.0.0:"${PORT}" \
+  --workers 3 \
+  --timeout 120 \
+  --log-level info \
+  --access-logfile - \
+  --error-logfile -

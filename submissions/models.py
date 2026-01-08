@@ -1,40 +1,73 @@
 from django.db import models
 from users.models import User
-from challenges.models import Challenge
+from challenges.models import Challenge, Contest, FlagSolution, TextSolution
+
+from django.conf import settings
+from django.db import models
 
 
 class SubmissionStatus(models.Model):
-    status = models.CharField(max_length=255, default="solved",unique=True, help_text="Name of the status")
-    description = models.CharField(max_length=255, unique=True, help_text="Name of the description")
+    status = models.CharField(max_length=255, default="solved",  help_text="Name of the status")
+    description = models.CharField(max_length=255,  help_text="Name of the description")
 
     def __str__(self):
         return self.status
 
 
-class UserFlagSubmission(models.Model):
+class BaseUserSubmission(models.Model):
     """
-    Correct flags for one or more challenges.
+    Common fields for both flag and text submissions.
+    Practice submissions: contest is NULL.
+    Competition submissions: contest is set.
     """
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    value = models.CharField(max_length=255, unique=True, help_text="User flag value")
-    challenges = models.ManyToManyField(Challenge, related_name="user_flag_solutions")
-    status = models.ForeignKey(SubmissionStatus, on_delete=models.CASCADE)
-    updated_at = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="%(class)s_submissions",
+    )
+    challenge = models.ForeignKey(
+        "challenges.Challenge",
+        on_delete=models.CASCADE,
+        related_name="%(class)s_submissions",
+    )
+    contest = models.ForeignKey(
+        "challenges.Contest",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="%(class)s_submissions",
+        help_text="Null for practice submissions; set for competition.",
+    )
+    status = models.ForeignKey("SubmissionStatus", on_delete=models.CASCADE)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        abstract = True
+        indexes = [
+            models.Index(fields=["challenge", "user"]),
+            models.Index(fields=["contest", "challenge", "user"]),
+        ]
+
+
+class UserFlagSubmission(BaseUserSubmission):
+    """
+    One flag submission for a single challenge (and optionally a contest).
+    """
+    value = models.CharField(
+        max_length=255,
+        help_text="User flag value",
+    )
 
     def __str__(self):
-        return self.value
+        return f"{self.user} :: {self.challenge_id} :: {self.value[:40]}"
 
 
-class UserTextSubmission(models.Model):
+class UserTextSubmission(BaseUserSubmission):
     """
-    Correct writing solutions for one or more challenges.
+    One text submission for a single challenge (and optionally a contest).
     """
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
     content = models.TextField(help_text="User text solution")
-    challenges = models.ManyToManyField(Challenge, related_name="user_text_solutions")
-    status = models.ForeignKey(SubmissionStatus, on_delete=models.CASCADE)
-    updated_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         # truncate for readability
-        return f"{self.content[:50]}{'...' if len(self.content) > 50 else ''}"
+        return f"{self.user} :: {self.challenge_id} :: {self.content[:50]}{'...' if len(self.content) > 50 else ''}"

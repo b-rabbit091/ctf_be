@@ -23,12 +23,23 @@ class Difficulty(models.Model):
         return self.level
 
 
+# challenges/models.py
 class SolutionType(models.Model):
-    type = models.CharField(max_length=50, unique=True)
+    FLAG = "flag"
+    PROCEDURE = "procedure"
+    BOTH = "both"
+
+    TYPE_CHOICES = (
+        (FLAG, "Flag"),
+        (PROCEDURE, "Procedure"),
+        (BOTH, "Flag and Procedure"),
+    )
+
+    type = models.CharField(max_length=50, unique=True, choices=TYPE_CHOICES)
     description = models.TextField(blank=True, null=True)
 
     def __str__(self):
-        return self.type
+        return self.get_type_display()
 
 
 class Challenge(models.Model):
@@ -51,6 +62,7 @@ class Challenge(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    group_only = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.title} ({self.question_type})"
@@ -99,3 +111,32 @@ class ChallengeFile(models.Model):
 
     def __str__(self):
         return self.original_name
+
+
+class Contest(models.Model):
+    CONTEST_TYPE_CHOICES = (
+        ("daily", "Daily"),
+        ("weekly", "Weekly"),
+        ("monthly", "Monthly"),
+        ("custom", "Custom"),
+    )
+
+    name = models.CharField(max_length=255)
+    slug = models.SlugField(unique=True)
+    description = models.TextField(blank=True)
+    contest_type = models.CharField(
+        max_length=20, choices=CONTEST_TYPE_CHOICES, default="custom"
+    )
+
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField()
+
+    challenges = models.ManyToManyField("challenges.Challenge", related_name="contests")
+
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name

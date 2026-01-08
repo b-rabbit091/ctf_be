@@ -7,3 +7,9 @@ drf-yasg==1.21.7
 django-cors-headers
 pillow
 python-magic
+dj_database_url
+gunicorn
+openai
+httpx
+google-genai
+
