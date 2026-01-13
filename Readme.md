@@ -19,6 +19,7 @@ Please ensure you have the following installed:
 ---
 
 ### 1. Clone the Repository
+Active branch : v1.0
 ```bash
 git clone git@github.com:b-rabbit091/ctf_be.git
 cd ctf_be
@@ -87,3 +88,4 @@ Swagger api documentation :
 ```
 http://localhost:8000/swagger/
 ```
+
