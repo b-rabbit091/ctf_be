@@ -19,8 +19,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 BASE_URL = "http://localhost:5173"
 
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+
+MEDIA_URL = "/media/"
+MEDIA_ROOT = os.getenv("MEDIA_ROOT", str(BASE_DIR / "media"))
+
+STATIC_URL = "/static/"
+STATIC_ROOT = os.getenv("STATIC_ROOT", str(BASE_DIR / "staticfiles"))
+
+
 
 # Local storage now; can be overridden with env var later
 DEFAULT_FILE_STORAGE = os.getenv(
@@ -99,11 +105,11 @@ AUTH_USER_MODEL = 'users.User'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'ctf_db',
-        'USER': 'django_user',
-        'PASSWORD': 'password',
-        'HOST': 'localhost',
-        'PORT': 5432,
+        'NAME': os.getenv('POSTGRES_DB'),
+        'USER': os.getenv('POSTGRES_USER'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
+        'HOST': os.getenv('POSTGRES_HOST'),
+        'PORT': os.getenv('POSTGRES_PORT'),
     }
 }
 

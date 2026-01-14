@@ -5,28 +5,27 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps (minimal)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
-    netcat-traditional \
+    postgresql-client \
+    libmagic1 \
   && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
+
 RUN useradd -m -u 10001 appuser
 
-# Install python deps
-COPY requirements.txt .
+# Copy deps from the correct folder (relative to build context = ..)
+COPY ctf_be/requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r /app/requirements.txt
 
-# Copy project
-COPY . .
+# Copy backend code
+COPY ctf_be/ /app/
 
-# Ensure entrypoint is executable
 RUN chmod +x /app/entrypoint.sh
 
-RUN mkdir -p /app/staticfiles /app/media && \
-    chown -R appuser:appuser /app
+RUN mkdir -p /vol/static /vol/media && \
+    chown -R appuser:appuser /app /vol
 
 USER appuser
 
