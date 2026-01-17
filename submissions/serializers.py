@@ -1,14 +1,26 @@
 from rest_framework import serializers
-from .models import UserFlagSubmission, UserTextSubmission, SubmissionStatus
-from challenges.models import Challenge
-from users.models import User
 
-# challenges/serializers.py
+from submissions.llm import call_coach_llm
+from . import utils
 
+from django.shortcuts import get_object_or_404
+from .utils import SolutionUtils
+
+from submissions.models import (
+    UserFlagSubmission,
+    UserTextSubmission,
+    SubmissionStatus,
+    GroupFlagSubmission,
+    GroupTextSubmission
+)
+
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
-from django.shortcuts import get_object_or_404
+from rest_framework.exceptions import PermissionDenied
+
 from challenges.models import Challenge, Contest, FlagSolution, TextSolution
+from users.models import UserGroup
 
 
 class BaseSubmissionSerializer(serializers.ModelSerializer):
@@ -288,18 +300,6 @@ class TextSubmissionSerializer(BaseSubmissionSerializer):
 
         return response
 
-from django.db import transaction
-from django.utils import timezone
-from rest_framework import serializers
-from rest_framework.exceptions import PermissionDenied
-
-from challenges.models import Contest, FlagSolution, TextSolution, Challenge
-from submissions.models import (
-    UserFlagSubmission,
-    UserTextSubmission,
-    SubmissionStatus,
-)
-
 
 class ChallengeSubmissionSerializer(serializers.Serializer):
     """
@@ -408,10 +408,203 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
 
         contest = self._get_contest_for_challenge(challenge)
 
+        challenge = (
+            Challenge.objects
+            .select_related("challenge_score")
+            .get(id=challenge.id)
+        )
+
         response = {
             "challenge_id": challenge.id,
             "question_type": challenge.question_type,
-            "contest_id": contest.id if contest else None,
+            "results": [],
+        }
+
+        # FLAG
+        if "value" in validated_data:
+            value = validated_data["value"].strip()
+            is_correct = self._check_flag_correct(challenge, value)
+            status_obj = self._get_status_for_result(is_correct)
+            flag_score = challenge.challenge_score.flag_score
+            user_score = 0
+            if is_correct:
+                user_score = flag_score
+
+            obj = UserFlagSubmission.objects.create(
+                user=user,
+                challenge=challenge,
+                contest=contest,
+                value=value,
+                status=status_obj,
+                user_score=user_score
+            )
+
+            response["results"].append({
+                "type": "flag",
+                "correct": is_correct,
+                "status": obj.status.status,
+                "submitted_at": obj.submitted_at,
+                "submitted_value": value,
+                "score": user_score
+
+            })
+
+        # PROCEDURE
+        if "content" in validated_data:
+            content = validated_data["content"]
+            is_correct = self._check_procedure_correct(challenge, content)
+            status_obj = self._get_status_for_result(is_correct)
+            text_solution = SolutionUtils.get_text_solution_for_challenge(challenge)
+            procedure_score = challenge.challenge_score.procedure_score
+
+            score_analyser = None
+
+            exact_val = text_solution.get("value", None)
+
+            if exact_val is not None and content:
+                try:
+                    score_analyser = call_coach_llm(
+                        user_solution=str(content),
+                        challenge=utils.get_challenge_blob(challenge) if challenge is not None else {},
+                        exact_solution=str(exact_val),
+                        max_score=int(procedure_score or 0),
+                    )
+                except Exception:
+                    score_analyser = None
+
+            try:
+                user_score = getattr(score_analyser, "score", None)
+                if user_score is None:
+                    user_score = 0
+            except Exception:
+                user_score = 0
+
+            try:
+                obj = UserTextSubmission.objects.create(
+                    user=user,
+                    challenge=challenge,
+                    contest=contest,
+                    content=content,
+                    status=status_obj,
+                    user_score=int(user_score) if user_score is not None else 0,
+                )
+            except Exception:
+                obj = None
+
+            response["results"].append({
+                "type": "procedure",
+                "correct": is_correct,
+                "status": obj.status.status,
+                "submitted_at": obj.submitted_at,
+                "submitted_content": content,
+                "user_score": user_score
+
+            })
+
+        return response
+
+
+class GroupChallengeSubmissionSerializer(serializers.Serializer):
+    value = serializers.CharField(required=False, allow_blank=False)
+    content = serializers.CharField(required=False, allow_blank=False)
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            raise PermissionDenied("Authentication required.")
+
+        if not attrs.get("value") and not attrs.get("content"):
+            raise serializers.ValidationError("Provide at least one of: value or content.")
+
+        challenge: Challenge = self.context.get("challenge")
+        if not challenge:
+            raise serializers.ValidationError("Challenge context missing.")
+
+        if not challenge.group_only:
+            raise PermissionDenied("This challenge is not a group-only challenge.")
+
+        try:
+            membership = user.group_membership  # related_name='group_membership'
+        except Exception:
+            membership = None
+        if not membership or not membership.group_id:
+            raise PermissionDenied("You must join a group to submit this challenge.")
+
+        sol_type = getattr(challenge, "solution_type", None)
+        sol_label = (getattr(sol_type, "type", "") or "").strip().lower()
+
+        allowed = set()
+        if sol_label == "flag":
+            allowed = {"flag"}
+        elif sol_label == "procedure":
+            allowed = {"procedure"}
+        elif sol_label == "flag and procedure":
+            allowed = {"flag", "procedure"}
+        else:
+            raise PermissionDenied("Challenge solution_type.type must be one of: flag, procedure, both.")
+
+        if attrs.get("value") and "flag" not in allowed:
+            raise serializers.ValidationError({"value": "This challenge does not accept flag submissions."})
+        if attrs.get("content") and "procedure" not in allowed:
+            raise serializers.ValidationError({"content": "This challenge does not accept procedure submissions."})
+
+        return attrs
+
+    def _get_status_for_result(self, is_correct: bool) -> SubmissionStatus:
+        status_value = "correct" if is_correct else "incorrect"
+        desc = "Group submitted a correct solution." if is_correct else "Group submitted an incorrect solution."
+        status_obj, _ = SubmissionStatus.objects.get_or_create(
+            status=status_value,
+            defaults={"description": desc},
+        )
+        return status_obj
+
+    def _get_contest_for_challenge(self, challenge: Challenge):
+        if challenge.question_type != "competition":
+            return None
+
+        contests_qs = Contest.objects.filter(challenges=challenge)
+        count = contests_qs.count()
+        if count == 0:
+            raise PermissionDenied("Competition challenge is not linked to any contest.")
+        if count > 1:
+            raise PermissionDenied("Challenge is linked to multiple contests. Fix data integrity.")
+
+        contest = contests_qs.first()
+        now = timezone.now()
+        if not contest.is_active:
+            raise PermissionDenied("Contest is not active.")
+        if not (contest.start_time <= now <= contest.end_time):
+            raise PermissionDenied("Contest is not accepting submissions at this time.")
+
+        return contest
+
+    def _check_flag_correct(self, challenge: Challenge, value: str) -> bool:
+        normalized = value.strip()
+        return FlagSolution.objects.filter(challenges=challenge, value=normalized).exists()
+
+    def _check_procedure_correct(self, challenge: Challenge, content: str) -> bool:
+        normalized = content.strip()
+        return TextSolution.objects.filter(challenges=challenge, content=normalized).exists()
+
+    @transaction.atomic
+    def create(self, validated_data):
+        request = self.context["request"]
+        user = request.user
+        challenge: Challenge = self.context["challenge"]
+
+        # group resolved from membership
+        membership: UserGroup = user.group_membership
+        group = membership.group
+
+        contest = self._get_contest_for_challenge(challenge)
+
+        challenge = Challenge.objects.select_related("challenge_score").get(id=challenge.id)
+
+        response = {
+            "challenge_id": challenge.id,
+            "question_type": challenge.question_type,
             "results": [],
         }
 
@@ -421,22 +614,23 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
             is_correct = self._check_flag_correct(challenge, value)
             status_obj = self._get_status_for_result(is_correct)
 
-            obj = UserFlagSubmission.objects.create(
-                user=user,
+            flag_score = getattr(challenge.challenge_score, "flag_score", 0) or 0
+            group_score = int(flag_score) if is_correct else 0
+
+            obj = GroupFlagSubmission.objects.create(
+                group=group,
+                submitted_by=user,
                 challenge=challenge,
                 contest=contest,
                 value=value,
                 status=status_obj,
+                group_score=group_score,
             )
 
             response["results"].append({
                 "type": "flag",
-                "submission_id": obj.id,
-                "correct": is_correct,
-                "status": obj.status.status,
                 "submitted_at": obj.submitted_at,
                 "submitted_value": value,
-
             })
 
         # PROCEDURE
@@ -445,22 +639,66 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
             is_correct = self._check_procedure_correct(challenge, content)
             status_obj = self._get_status_for_result(is_correct)
 
-            obj = UserTextSubmission.objects.create(
-                user=user,
+            procedure_score = getattr(challenge.challenge_score, "procedure_score", 0) or 0
+
+            score_analyser = None
+            exact_val = None
+            try:
+                text_solution = SolutionUtils.get_text_solution_for_challenge(challenge)
+                exact_val = text_solution.get("value", None) if isinstance(text_solution, dict) else None
+            except Exception:
+                exact_val = None
+
+            if exact_val is not None and content:
+                try:
+                    score_analyser = call_coach_llm(
+                        user_solution=str(content),
+                        challenge=utils.get_challenge_blob(challenge) if challenge is not None else {},
+                        exact_solution=str(exact_val),
+                        max_score=int(procedure_score or 0),
+                    )
+                except Exception:
+                    score_analyser = None
+
+            try:
+                group_score = getattr(score_analyser, "score", None)
+                group_score = int(group_score) if group_score is not None else 0
+            except Exception:
+                group_score = 0
+
+            obj = GroupTextSubmission.objects.create(
+                group=group,
+                submitted_by=user,
                 challenge=challenge,
                 contest=contest,
                 content=content,
                 status=status_obj,
+                group_score=group_score,
             )
 
             response["results"].append({
                 "type": "procedure",
-                "submission_id": obj.id,
-                "correct": is_correct,
-                "status": obj.status.status,
                 "submitted_at": obj.submitted_at,
-                "submitted_content": content, 
-
+                "submitted_content": content,
             })
 
         return response
+
+
+from rest_framework import serializers
+from submissions.models import GroupFlagSubmission, GroupTextSubmission
+
+
+from rest_framework import serializers
+from submissions.models import GroupFlagSubmission, GroupTextSubmission
+
+class GroupFlagSubmissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GroupFlagSubmission
+        fields = ["id", "submitted_at", "value"]
+
+class GroupTextSubmissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GroupTextSubmission
+        fields = ["id", "submitted_at", "content"]
+

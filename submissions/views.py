@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from rest_framework import viewsets, permissions
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -7,9 +9,26 @@ from .models import UserFlagSubmission, UserTextSubmission
 from rest_framework.views import APIView
 from .permissions import IsOwnerOrAdmin
 
-from .serializers import FlagSubmissionSerializer, TextSubmissionSerializer, ChallengeSubmissionSerializer
+from .serializers import FlagSubmissionSerializer, TextSubmissionSerializer, ChallengeSubmissionSerializer, \
+    GroupChallengeSubmissionSerializer, GroupFlagSubmissionSerializer, GroupTextSubmissionSerializer
 
+from rest_framework import viewsets, permissions, status
+from rest_framework.response import Response
+from rest_framework.exceptions import NotFound
 
+from challenges.models import Challenge
+from collections import defaultdict
+from django.contrib.auth import get_user_model
+from django.db.models import Max
+from rest_framework import serializers, status, viewsets
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
+
+from challenges.models import Contest
+from submissions.models import UserFlagSubmission, UserTextSubmission
+
+User = get_user_model()
 class FlagSubmissionViewSet(viewsets.ModelViewSet):
     """
     API for flag submissions.
@@ -74,33 +93,73 @@ class TextSubmissionViewSet(viewsets.ModelViewSet):
         return super().perform_create(serializer)
 
 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import NotFound, PermissionDenied
+
+from challenges.models import Challenge
+from submissions.models import (
+    UserFlagSubmission, UserTextSubmission,
+    GroupFlagSubmission, GroupTextSubmission,
+)
+from users.models import UserGroup
+
+
 class PreviousSubmissionsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, challenge_id):
         user = request.user
+
         try:
             challenge = Challenge.objects.get(id=challenge_id)
         except Challenge.DoesNotExist:
-            return Response({"detail": "Challenge not found"}, status=404)
+            raise NotFound("Challenge not found")
 
-        flag_submissions = UserFlagSubmission.objects.filter(user=user, challenge=challenge)
-        text_submissions = UserTextSubmission.objects.filter(user=user, challenge=challenge)
+        # GROUP-ONLY: show only submissions made by the user's own group
+        if challenge.group_only:
+            try:
+                membership = user.group_membership  # related_name='group_membership'
+            except UserGroup.DoesNotExist:
+                raise PermissionDenied("You must join a group to view submissions for this challenge.")
 
-        flag_serializer = FlagSubmissionSerializer(flag_submissions, many=True)
-        text_serializer = TextSubmissionSerializer(text_submissions, many=True)
+            group = membership.group
+
+            flag_submissions = (
+                GroupFlagSubmission.objects
+                .filter(group=group, challenge=challenge)
+                .order_by("-submitted_at")
+            )
+            text_submissions = (
+                GroupTextSubmission.objects
+                .filter(group=group, challenge=challenge)
+                .order_by("-submitted_at")
+            )
+
+            return Response({
+                "flag_submissions": GroupFlagSubmissionSerializer(flag_submissions, many=True).data,
+                "text_submissions": GroupTextSubmissionSerializer(text_submissions, many=True).data,
+            })
+
+        # NORMAL: show only submissions made by the user
+        flag_submissions = (
+            UserFlagSubmission.objects
+            .filter(user=user, challenge=challenge)
+            .order_by("-submitted_at")
+        )
+        text_submissions = (
+            UserTextSubmission.objects
+            .filter(user=user, challenge=challenge)
+            .order_by("-submitted_at")
+        )
 
         return Response({
-            "flag_submissions": flag_serializer.data,
-            "text_submissions": text_serializer.data
+            "flag_submissions": FlagSubmissionSerializer(flag_submissions, many=True).data,
+            "text_submissions": TextSubmissionSerializer(text_submissions, many=True).data,
         })
 
 
-from rest_framework import viewsets, permissions, status
-from rest_framework.response import Response
-from rest_framework.exceptions import NotFound
-
-from challenges.models import Challenge
 
 
 class ChallengeSubmissionViewSet(viewsets.ViewSet):
@@ -116,7 +175,14 @@ class ChallengeSubmissionViewSet(viewsets.ViewSet):
         except Challenge.DoesNotExist:
             raise NotFound("Challenge not found.")
 
-        serializer = ChallengeSubmissionSerializer(
+        # Pick the right serializer based on challenge.group_only
+        serializer_class = (
+            GroupChallengeSubmissionSerializer
+            if getattr(challenge, "group_only", False)
+            else ChallengeSubmissionSerializer
+        )
+
+        serializer = serializer_class(
             data=request.data,
             context={"request": request, "challenge": challenge},
         )
@@ -126,175 +192,117 @@ class ChallengeSubmissionViewSet(viewsets.ViewSet):
         return Response(result, status=status.HTTP_201_CREATED)
 
 
-from collections import defaultdict
-from django.contrib.auth import get_user_model
-from django.db.models import Count, Max
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.views import APIView
 
-from challenges.models import Contest
-from submissions.models import UserFlagSubmission, UserTextSubmission  # adjust import
-
-User = get_user_model()
+class LeaderboardPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 200
 
 
-class LeaderboardViewSet(APIView):
-    """
-    GET /api/leaderboard/?mode=practice
-    GET /api/leaderboard/?mode=competition&contest_id=1
-    GET /api/leaderboard/?mode=competition               -> ALL contests (contest IS NOT NULL)
-    """
+class LeaderboardEntrySerializer(serializers.Serializer):
+    rank = serializers.IntegerField()
+    user_id = serializers.IntegerField()
+    username = serializers.CharField()
+    total_score = serializers.IntegerField()
+
+
+class LeaderboardResponseSerializer(serializers.Serializer):
+    type = serializers.CharField()
+    contest = serializers.CharField(allow_null=True)
+    results = LeaderboardEntrySerializer(many=True)
+
+
+class LeaderboardViewSet(viewsets.GenericViewSet):
     permission_classes = [IsAuthenticated]
+    pagination_class = LeaderboardPagination
 
-    def get(self, request):
-        mode = (request.query_params.get("mode") or "practice").strip().lower()
-        contest_id = request.query_params.get("contest_id")
-        contest_slug = request.query_params.get("contest_slug")
+    def list(self, request, *args, **kwargs):
+        try:
+            lb_type = (request.query_params.get("mode") or "practice").strip().lower()
+            contest_id = (request.query_params.get("contest_id") or "").strip()
+            search = (request.query_params.get("search") or "").strip().lower()
 
-        if mode not in {"practice", "competition"}:
-            return Response({"error": "mode must be 'practice' or 'competition'."}, status=400)
+            if lb_type not in {"practice", "competition"}:
+                return self._error("type must be practice or competition", status.HTTP_400_BAD_REQUEST)
 
-        contest = None
-        if contest_id:
-            contest = Contest.objects.filter(id=contest_id).first()
-            if not contest:
-                return Response({"error": "Contest not found."}, status=404)
-        elif contest_slug:
-            contest = Contest.objects.filter(slug=contest_slug).first()
-            if not contest:
-                return Response({"error": "Contest not found."}, status=404)
+            contest = None
+            if lb_type == "competition":
+                if not contest_id:
+                    return self._error("No contest selected.", status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Core rule
-        # practice  -> contest IS NULL
-        # competition:
-        #    - specific contest -> contest = that contest
-        #    - ALL contests     -> contest IS NOT NULL
-        if mode == "practice":
-            contest_filter = {"contest__isnull": True}
-        else:
-            if contest is not None:
-                contest_filter = {"contest": contest}
-            else:
-                contest_filter = {"contest__isnull": False}  # ALL contests (not practice)
+                contest = Contest.objects.filter(id=contest_id).only("id", "slug", "publish_result").first()
+                if not contest:
+                    return self._error("Contest not found.", status.HTTP_404_NOT_FOUND)
+                if not contest.publish_result:
+                    return self._error("Results for this contest are not published yet.", status.HTTP_403_FORBIDDEN)
 
+            rows = self._build_rows(lb_type, contest,search)
+
+            page = self.paginate_queryset(rows)
+            if page is not None:
+                payload = {
+                    "type": lb_type,
+                    "contest": contest.slug if contest else None,
+                    "results": page,
+                }
+                return self.get_paginated_response(LeaderboardResponseSerializer(payload).data)
+
+            payload = {
+                "type": lb_type,
+                "contest": contest.slug if contest else None,
+                "results": rows,
+            }
+            return Response(LeaderboardResponseSerializer(payload).data, status=status.HTTP_200_OK)
+
+        except Exception:
+            return self._error("Unable to load leaderboard at this time.", status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def _error(self, msg, code):
+        return Response({"error": msg}, status=code)
+
+    def _build_rows(self, lb_type, contest,search):
         solved_filter = {
-            **contest_filter,
+            "challenge__question_type": lb_type,
             "status__status__iexact": "solved",
         }
+        if lb_type == "practice":
+            solved_filter["contest__isnull"] = True
+        else:
+            solved_filter["contest"] = contest
 
-        # We will bucket by (user_id, contest_id) for competition.
-        # For practice, contest_id will be None so it's effectively (user_id, None).
-        def bucket_key(uid, cid):
-            return f"{uid}|{cid if cid is not None else 'null'}"
+        flag_rows = self._best_scores(UserFlagSubmission.objects.filter(**solved_filter))
+        text_rows = self._best_scores(UserTextSubmission.objects.filter(**solved_filter))
 
-        # ---- Collect solved pairs (distinct user, contest, challenge) ----
-        flag_pairs = (
-            UserFlagSubmission.objects.filter(**solved_filter)
-            .values_list("user_id", "contest_id", "challenge_id")
-            .distinct()
-        )
-        text_pairs = (
-            UserTextSubmission.objects.filter(**solved_filter)
-            .values_list("user_id", "contest_id", "challenge_id")
-            .distinct()
-        )
+        best = defaultdict(dict)  # user_id -> {challenge_id: best_score}
 
-        solved_by_bucket = defaultdict(set)  # key -> set(challenge_id)
-        bucket_meta = {}  # key -> (user_id, contest_id)
+        for row in list(flag_rows) + list(text_rows):
+            uid = row["user_id"]
+            ch_id = row["challenge_id"]
+            score = int(row["best_score"] or 0)
 
-        for uid, cid, ch_id in flag_pairs:
-            k = bucket_key(uid, cid)
-            solved_by_bucket[k].add(ch_id)
-            bucket_meta[k] = (uid, cid)
+            prev = best[uid].get(ch_id)
+            if prev is None or score > prev:
+                best[uid][ch_id] = score
 
-        for uid, cid, ch_id in text_pairs:
-            k = bucket_key(uid, cid)
-            solved_by_bucket[k].add(ch_id)
-            bucket_meta[k] = (uid, cid)
+        totals = {uid: sum(scores.values()) for uid, scores in best.items()}
+        if not totals:
+            return []
 
-        if not solved_by_bucket:
-            return Response({"mode": mode, "contest": _contest_obj(contest), "results": []})
+        users = User.objects.filter(id__in=totals.keys()).only("id", "username")
+        rows = [{"user_id": u.id, "username": u.username, "total_score": int(totals.get(u.id, 0))} for u in users]
 
-        # ---- Users & contests maps ----
-        user_ids = list({bucket_meta[k][0] for k in solved_by_bucket.keys()})
-        contest_ids = list({bucket_meta[k][1] for k in solved_by_bucket.keys() if bucket_meta[k][1] is not None})
+        rows.sort(key=lambda r: (-r["total_score"], (r["username"] or "").lower(), r["user_id"]))
 
-        users = User.objects.filter(id__in=user_ids).only("id", "username", "email")
-        user_map = {u.id: u for u in users}
-
-        contests = Contest.objects.filter(id__in=contest_ids).only("id", "name", "slug")
-        contest_map = {c.id: c for c in contests}
-
-        # ---- last_solved_at (tie-breaker) per bucket ----
-        # We approximate with Max(submitted_at) among SOLVED submissions for that bucket.
-        # (Works well for "last submission" display too.)
-        flag_last = (
-            UserFlagSubmission.objects.filter(**solved_filter)
-            .values("user_id", "contest_id")
-            .annotate(last=Max("submitted_at"), flag_submissions=Count("id"))
-        )
-        text_last = (
-            UserTextSubmission.objects.filter(**solved_filter)
-            .values("user_id", "contest_id")
-            .annotate(last=Max("submitted_at"), text_submissions=Count("id"))
-        )
-
-        stats = defaultdict(lambda: {"last_solved_at": None, "flag_submissions": 0, "text_submissions": 0})
-
-        for row in flag_last:
-            uid, cid = row["user_id"], row["contest_id"]
-            k = bucket_key(uid, cid)
-            stats[k]["flag_submissions"] = row["flag_submissions"] or 0
-            stats[k]["last_solved_at"] = row["last"]
-
-        for row in text_last:
-            uid, cid = row["user_id"], row["contest_id"]
-            k = bucket_key(uid, cid)
-            stats[k]["text_submissions"] = row["text_submissions"] or 0
-            if stats[k]["last_solved_at"] is None or (row["last"] and row["last"] > stats[k]["last_solved_at"]):
-                stats[k]["last_solved_at"] = row["last"]
-
-        # ---- Build rows ----
-        rows = []
-        for k, solved_set in solved_by_bucket.items():
-            uid, cid = bucket_meta[k]
-            u = user_map.get(uid)
-            if not u:
-                continue
-
-            c_name = None
-            if cid is not None:
-                cobj = contest_map.get(cid)
-                c_name = (cobj.name if cobj else f"Contest #{cid}")
-
-            rows.append(
-                {
-                    "user": {"id": u.id, "username": u.username, "email": getattr(u, "email", None)},
-                    "contest_id": cid,
-                    "contest_name": c_name,
-                    "solved": len(solved_set),
-                    "flag_submissions": stats[k]["flag_submissions"],
-                    "text_submissions": stats[k]["text_submissions"],
-                    "last_solved_at": stats[k]["last_solved_at"],
-                }
-            )
-
-        # ---- Sort & rank ----
-        rows.sort(
-            key=lambda r: (
-                -r["solved"],
-                r["last_solved_at"] or "9999-12-31T00:00:00Z",
-                (r["user"]["username"] or "").lower(),
-            )
-        )
         for i, r in enumerate(rows, start=1):
             r["rank"] = i
 
-        return Response({"mode": mode, "contest": _contest_obj(contest), "results": rows})
+        if search:
+            rows = [
+                r for r in rows
+                if search in (r.get("username") or "").lower()
+            ]
 
+        return rows
 
-def _contest_obj(contest):
-    if not contest:
-        return None
-    return {"id": contest.id, "slug": contest.slug, "name": contest.name}
+    def _best_scores(self, qs):
+        return qs.values("user_id", "challenge_id").annotate(best_score=Max("user_score"))

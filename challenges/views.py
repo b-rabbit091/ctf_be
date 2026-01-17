@@ -116,5 +116,10 @@ class ContestViewSet(viewsets.ModelViewSet):
     serializer_class = ContestSerializer
     permission_classes = [IsAdminOrReadOnly]
 
+    def get_queryset(self):
+        qs = Contest.objects.all()
 
+        if self.action in {"list", "retrieve"}:
+            qs = qs.filter(publish_result=True)
 
+        return qs

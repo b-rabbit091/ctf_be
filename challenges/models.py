@@ -23,7 +23,6 @@ class Difficulty(models.Model):
         return self.level
 
 
-# challenges/models.py
 class SolutionType(models.Model):
     FLAG = "flag"
     PROCEDURE = "procedure"
@@ -40,6 +39,11 @@ class SolutionType(models.Model):
 
     def __str__(self):
         return self.get_type_display()
+
+
+class ChallengeScore(models.Model):
+    flag_score = models.IntegerField(default=0)
+    procedure_score = models.IntegerField(default=0)
 
 
 class Challenge(models.Model):
@@ -59,6 +63,7 @@ class Challenge(models.Model):
     sample_output = models.TextField(blank=True, null=True)
     question_type = models.CharField(max_length=20, choices=QUESTION_TYPE_CHOICES, default='practice')
     solution_type = models.ForeignKey(SolutionType, default=3, on_delete=models.SET_NULL, null=True, blank=True)
+    challenge_score = models.ForeignKey(ChallengeScore, null=True, blank=True, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -134,6 +139,7 @@ class Contest(models.Model):
     challenges = models.ManyToManyField("challenges.Challenge", related_name="contests")
 
     is_active = models.BooleanField(default=True)
+    publish_result = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -12,7 +12,7 @@ urlpatterns = [
 
     path('previous-submissions/<int:challenge_id>/', PreviousSubmissionsAPIView.as_view(),
          name='previous-challenge-submissions'),
-    path("leaderboard/", LeaderboardViewSet.as_view(), name="leaderboard"),
+    path("leaderboard/", LeaderboardViewSet.as_view({'get':'list'}), name="leaderboard"),
 
     path('', include(router.urls)),
 
