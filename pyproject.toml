@@ -1,0 +1,15 @@
+[tool.ruff]
+exclude = [
+  ".venv",
+  "venv",
+  "node_modules",
+  "static",
+  "media",
+  "**/migrations/**"
+]
+line-length = 200
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I"]
+fixable = ["ALL"]

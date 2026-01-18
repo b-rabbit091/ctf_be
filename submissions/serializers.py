@@ -409,9 +409,7 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
             if is_correct:
                 user_score = flag_score
 
-            obj = UserFlagSubmission.objects.create(
-                user=user, challenge=challenge, contest=contest, value=value, status=status_obj, user_score=user_score
-            )
+            obj = UserFlagSubmission.objects.create(user=user, challenge=challenge, contest=contest, value=value, status=status_obj, user_score=user_score)
 
             response["results"].append(
                 {
@@ -663,9 +661,6 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
             )
 
         return response
-
-
-from rest_framework import serializers
 
 
 class GroupFlagSubmissionSerializer(serializers.ModelSerializer):

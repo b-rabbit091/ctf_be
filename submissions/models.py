@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+from users.models import Group
+
 
 class SubmissionStatus(models.Model):
     status = models.CharField(max_length=255, default="solved", help_text="Name of the status")
@@ -71,16 +73,6 @@ class UserTextSubmission(BaseUserSubmission):
     def __str__(self):
         # truncate for readability
         return f"{self.user} :: {self.challenge_id} :: {self.content[:50]}{'...' if len(self.content) > 50 else ''}"
-
-
-# submissions/models.py
-
-from django.conf import settings
-from django.db import models
-
-from users.models import Group  # adjust import to your app
-
-# or from .models import Group if in same app
 
 
 class BaseGroupSubmission(models.Model):

@@ -6,6 +6,13 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
 
+from django.db import DatabaseError, IntegrityError, transaction
+from django.utils import timezone
+
+from challenges.models import Challenge
+
+from .models import ChatThread, ChatTurn
+
 # ----------------------------
 # Shared helpers
 # ----------------------------
@@ -180,26 +187,12 @@ def get_llm_client(*, provider: str, timeout_s: int, model: Optional[str]) -> LL
     raise ValueError(f"Unknown LLM_PROVIDER '{provider}'. Use 'openai' or 'gemini'.")
 
 
-# chat/services.py
-
-from django.db import DatabaseError, IntegrityError, transaction
-from django.utils import timezone
-
-from challenges.models import Challenge
-
-from .models import ChatThread, ChatTurn
-
-
 def get_practice_challenge_or_none(challenge_id: int) -> Challenge | None:
     """
     Strictly mirrors PracticeChatView: practice-only challenge.
     """
     try:
-        return (
-            Challenge.objects.select_related("solution_type")
-            .only("id", "title", "description", "question_type", "solution_type")
-            .get(id=challenge_id, question_type="practice")
-        )
+        return Challenge.objects.select_related("solution_type").only("id", "title", "description", "question_type", "solution_type").get(id=challenge_id, question_type="practice")
     except Challenge.DoesNotExist:
         return None
 

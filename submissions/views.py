@@ -24,7 +24,6 @@ from submissions.models import (
 from users.models import UserGroup
 from users.permissions import IsAdminUser
 
-from .models import UserFlagSubmission, UserTextSubmission
 from .pagination import LeaderboardPagination
 from .permissions import IsOwnerOrAdmin
 from .serializers import (

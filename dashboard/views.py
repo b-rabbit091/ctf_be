@@ -1,6 +1,7 @@
 # dashboard/views.py
 from typing import Dict, List, Set
 
+from django.contrib.auth import get_user_model
 from django.db.models import Count, F, Q
 from django.utils import timezone
 from rest_framework import status
@@ -10,7 +11,10 @@ from rest_framework.views import APIView
 
 from challenges.models import Challenge, Contest
 from submissions.models import SubmissionStatus, UserFlagSubmission, UserTextSubmission
-from users.models import User
+
+from .permissions import IsAdminOnly
+
+User = get_user_model()
 
 
 class DashboardOverviewView(APIView):
@@ -202,12 +206,7 @@ class DashboardOverviewView(APIView):
         if not solved_ids:
             return []
 
-        qs = (
-            Challenge.objects.filter(id__in=solved_ids)
-            .values("category__id", "category__name")
-            .annotate(solved_count=Count("id"))
-            .order_by("-solved_count")
-        )
+        qs = Challenge.objects.filter(id__in=solved_ids).values("category__id", "category__name").annotate(solved_count=Count("id")).order_by("-solved_count")
 
         return [
             {
@@ -295,12 +294,6 @@ class DashboardOverviewView(APIView):
 
 
 # dashboard/views.py
-from django.contrib.auth import get_user_model
-from rest_framework.views import APIView
-
-from .permissions import IsAdminOnly
-
-User = get_user_model()
 
 
 class AdminDashboardTotalsView(APIView):
@@ -350,9 +343,7 @@ class AdminDashboardTotalsView(APIView):
         else:
             solved_submissions = 0
 
-        distinct_submitters = (
-            UserFlagSubmission.objects.values("user_id").distinct().count() + UserTextSubmission.objects.values("user_id").distinct().count()
-        )
+        distinct_submitters = UserFlagSubmission.objects.values("user_id").distinct().count() + UserTextSubmission.objects.values("user_id").distinct().count()
 
         payload = {
             "users": {

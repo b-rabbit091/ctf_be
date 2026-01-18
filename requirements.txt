@@ -14,3 +14,4 @@ httpx
 google-genai
 ruff
 black
+pre-commit

@@ -1,4 +1,6 @@
 # users/utils.py
+import uuid
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
@@ -67,9 +69,6 @@ This link is valid for 48 hours.
         recipient_list,
         fail_silently=False,
     )
-
-
-import uuid
 
 
 def generate_secure_uuid():
