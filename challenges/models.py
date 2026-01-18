@@ -1,6 +1,6 @@
-from django.db import models
-from django.contrib.auth import get_user_model
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.db import models
 
 from challenges.utils import challenge_file_upload_path
 
@@ -48,20 +48,20 @@ class ChallengeScore(models.Model):
 
 class Challenge(models.Model):
     QUESTION_TYPE_CHOICES = (
-        ('practice', 'Practice'),
-        ('competition', 'Competition'),
+        ("practice", "Practice"),
+        ("competition", "Competition"),
     )
 
     title = models.CharField(max_length=255)
-    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='challenges')
-    difficulty = models.ForeignKey(Difficulty, on_delete=models.SET_NULL, null=True, related_name='difficulty')
+    category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name="challenges")
+    difficulty = models.ForeignKey(Difficulty, on_delete=models.SET_NULL, null=True, related_name="difficulty")
     description = models.TextField()
     constraints = models.TextField(blank=True, null=True)
     input_format = models.TextField(blank=True, null=True)
     output_format = models.TextField(blank=True, null=True)
     sample_input = models.TextField(blank=True, null=True)
     sample_output = models.TextField(blank=True, null=True)
-    question_type = models.CharField(max_length=20, choices=QUESTION_TYPE_CHOICES, default='practice')
+    question_type = models.CharField(max_length=20, choices=QUESTION_TYPE_CHOICES, default="practice")
     solution_type = models.ForeignKey(SolutionType, default=3, on_delete=models.SET_NULL, null=True, blank=True)
     challenge_score = models.ForeignKey(ChallengeScore, null=True, blank=True, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -77,6 +77,7 @@ class FlagSolution(models.Model):
     """
     Correct flags for one or more challenges.
     """
+
     value = models.CharField(max_length=255, unique=True, help_text="flag_value")
     challenges = models.ManyToManyField(Challenge, related_name="flag_solutions")
 
@@ -88,6 +89,7 @@ class TextSolution(models.Model):
     """
     Correct writing solutions for one or more challenges.
     """
+
     content = models.TextField(help_text="Correct text solution")
     challenges = models.ManyToManyField(Challenge, related_name="text_solutions")
 
@@ -129,9 +131,7 @@ class Contest(models.Model):
     name = models.CharField(max_length=255)
     slug = models.SlugField(unique=True)
     description = models.TextField(blank=True)
-    contest_type = models.CharField(
-        max_length=20, choices=CONTEST_TYPE_CHOICES, default="custom"
-    )
+    contest_type = models.CharField(max_length=20, choices=CONTEST_TYPE_CHOICES, default="custom")
 
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()

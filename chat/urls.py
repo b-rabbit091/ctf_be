@@ -1,8 +1,8 @@
 # chat/urls.py
-from django.urls import path, include
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from .views import PracticeChatView, ChatThreadViewSet
+from .views import ChatThreadViewSet, PracticeChatView
 
 router = DefaultRouter()
 router.register(r"thread", ChatThreadViewSet, basename="chat-thread")

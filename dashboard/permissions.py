@@ -1,4 +1,4 @@
-from rest_framework.permissions import BasePermission, SAFE_METHODS
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 
 class IsAuthenticatedReadOnly(BasePermission):
@@ -59,12 +59,7 @@ class IsAdminOrReadOnly(BasePermission):
             return request.user.is_authenticated
 
         # Only admins can write
-        return (
-                request.user.is_authenticated
-                and hasattr(request.user, "is_admin")
-                and request.user.is_admin()
-        )
-
+        return request.user.is_authenticated and hasattr(request.user, "is_admin") and request.user.is_admin()
 
 
 # dashboard/permissions.py
@@ -78,9 +73,4 @@ class IsAdminOnly(BasePermission):
     """
 
     def has_permission(self, request, view):
-        return (
-            request.user
-            and request.user.is_authenticated
-            and hasattr(request.user, "is_admin")
-            and request.user.is_admin()
-        )
+        return request.user and request.user.is_authenticated and hasattr(request.user, "is_admin") and request.user.is_admin()

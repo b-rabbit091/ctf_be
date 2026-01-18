@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Protocol
 # Shared helpers
 # ----------------------------
 
+
 def clamp_percent(n: Any) -> int:
     try:
         n = int(n)
@@ -17,12 +18,14 @@ def clamp_percent(n: Any) -> int:
         return 50
     return max(0, min(100, n))
 
+
 def _safe_json_loads(s: str) -> Optional[dict]:
     try:
         obj = json.loads(s)
         return obj if isinstance(obj, dict) else None
     except Exception:
         return None
+
 
 def safe_extract_json_from_text(text: str) -> Optional[dict]:
     """
@@ -53,10 +56,12 @@ def safe_extract_json_from_text(text: str) -> Optional[dict]:
 # Provider interface + errors
 # ----------------------------
 
+
 class LLMClient(Protocol):
     def generate_text(self, messages: List[Dict[str, Any]]) -> str:
         """Return raw text from provider (should be JSON per prompt)."""
         ...
+
 
 @dataclass
 class LLMTransientError(Exception):
@@ -67,6 +72,7 @@ class LLMTransientError(Exception):
 # ----------------------------
 # OpenAI implementation
 # ----------------------------
+
 
 class OpenAIClient:
     def __init__(self, *, timeout_s: int, model: Optional[str] = None):
@@ -104,10 +110,12 @@ class OpenAIClient:
 # Gemini implementation (Google Gen AI SDK)
 # ----------------------------
 
+
 class GeminiClient:
     """
     Uses Google Gen AI SDK (google-genai), which is the recommended library. :contentReference[oaicite:2]{index=2}
     """
+
     def __init__(self, *, timeout_s: int, model: Optional[str] = None):
         # Lazy import so project doesn't require google-genai unless used
         from google import genai
@@ -159,6 +167,7 @@ class GeminiClient:
 # Factory (single place to choose provider)
 # ----------------------------
 
+
 def get_llm_client(*, provider: str, timeout_s: int, model: Optional[str]) -> LLMClient:
     provider = (provider or "openai").lower().strip()
 
@@ -171,13 +180,13 @@ def get_llm_client(*, provider: str, timeout_s: int, model: Optional[str]) -> LL
     raise ValueError(f"Unknown LLM_PROVIDER '{provider}'. Use 'openai' or 'gemini'.")
 
 
-
 # chat/services.py
 
 from django.db import DatabaseError, IntegrityError, transaction
 from django.utils import timezone
 
 from challenges.models import Challenge
+
 from .models import ChatThread, ChatTurn
 
 
@@ -187,8 +196,7 @@ def get_practice_challenge_or_none(challenge_id: int) -> Challenge | None:
     """
     try:
         return (
-            Challenge.objects
-            .select_related("solution_type")
+            Challenge.objects.select_related("solution_type")
             .only("id", "title", "description", "question_type", "solution_type")
             .get(id=challenge_id, question_type="practice")
         )

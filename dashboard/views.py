@@ -1,16 +1,15 @@
 # dashboard/views.py
 from typing import Dict, List, Set
 
-from django.db.models import Count, Q, F
+from django.db.models import Count, F, Q
 from django.utils import timezone
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from challenges.models import Challenge, Contest, Category, Difficulty
-from submissions.models import UserFlagSubmission, UserTextSubmission, SubmissionStatus
+from challenges.models import Challenge, Contest
+from submissions.models import SubmissionStatus, UserFlagSubmission, UserTextSubmission
 from users.models import User
 
 
@@ -27,9 +26,9 @@ class DashboardOverviewView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get_solved_challenge_ids(
-            self,
-            user: User,
-            question_type: str | None = None,
+        self,
+        user: User,
+        question_type: str | None = None,
     ) -> Set[int]:
         """
         Return a set of challenge IDs that the user has solved
@@ -42,22 +41,14 @@ class DashboardOverviewView(APIView):
         if question_type:
             base_filter &= Q(challenge__question_type=question_type)
 
-        flag_ids = (
-            UserFlagSubmission.objects.filter(base_filter)
-            .values_list("challenge_id", flat=True)
-            .distinct()
-        )
-        text_ids = (
-            UserTextSubmission.objects.filter(base_filter)
-            .values_list("challenge_id", flat=True)
-            .distinct()
-        )
+        flag_ids = UserFlagSubmission.objects.filter(base_filter).values_list("challenge_id", flat=True).distinct()
+        text_ids = UserTextSubmission.objects.filter(base_filter).values_list("challenge_id", flat=True).distinct()
         return set(flag_ids).union(set(text_ids))
 
     def get_attempted_challenge_ids(
-            self,
-            user: User,
-            question_type: str | None = None,
+        self,
+        user: User,
+        question_type: str | None = None,
     ) -> Set[int]:
         """
         Return a set of challenge IDs that the user has *attempted* (any submission),
@@ -67,16 +58,8 @@ class DashboardOverviewView(APIView):
         if question_type:
             base_filter &= Q(challenge__question_type=question_type)
 
-        flag_ids = (
-            UserFlagSubmission.objects.filter(base_filter)
-            .values_list("challenge_id", flat=True)
-            .distinct()
-        )
-        text_ids = (
-            UserTextSubmission.objects.filter(base_filter)
-            .values_list("challenge_id", flat=True)
-            .distinct()
-        )
+        flag_ids = UserFlagSubmission.objects.filter(base_filter).values_list("challenge_id", flat=True).distinct()
+        text_ids = UserTextSubmission.objects.filter(base_filter).values_list("challenge_id", flat=True).distinct()
         return set(flag_ids).union(set(text_ids))
 
     def get_recent_submissions(self, user: User, limit: int = 10) -> List[Dict]:
@@ -95,16 +78,8 @@ class DashboardOverviewView(APIView):
           - status: e.g. "solved", "wrong", ...
           - submitted_at: ISO timestamp
         """
-        flag_qs = (
-            UserFlagSubmission.objects.filter(user=user)
-            .select_related("challenge", "contest", "status")
-            .order_by("-submitted_at")[:limit]
-        )
-        text_qs = (
-            UserTextSubmission.objects.filter(user=user)
-            .select_related("challenge", "contest", "status")
-            .order_by("-submitted_at")[:limit]
-        )
+        flag_qs = UserFlagSubmission.objects.filter(user=user).select_related("challenge", "contest", "status").order_by("-submitted_at")[:limit]
+        text_qs = UserTextSubmission.objects.filter(user=user).select_related("challenge", "contest", "status").order_by("-submitted_at")[:limit]
 
         items: List[Dict] = []
 
@@ -115,9 +90,7 @@ class DashboardOverviewView(APIView):
                     "type": "flag",
                     "challenge_id": s.challenge_id,
                     "challenge_title": s.challenge.title if s.challenge else None,
-                    "question_type": s.challenge.question_type
-                    if s.challenge
-                    else None,
+                    "question_type": s.challenge.question_type if s.challenge else None,
                     "contest_id": s.contest_id,
                     "contest_name": s.contest.name if s.contest else None,
                     "status": s.status.status if s.status else None,
@@ -132,9 +105,7 @@ class DashboardOverviewView(APIView):
                     "type": "text",
                     "challenge_id": s.challenge_id,
                     "challenge_title": s.challenge.title if s.challenge else None,
-                    "question_type": s.challenge.question_type
-                    if s.challenge
-                    else None,
+                    "question_type": s.challenge.question_type if s.challenge else None,
                     "contest_id": s.contest_id,
                     "contest_name": s.contest.name if s.contest else None,
                     "status": s.status.status if s.status else None,
@@ -154,29 +125,20 @@ class DashboardOverviewView(APIView):
         """
         now = timezone.now()
 
-        ongoing_qs = (
-            Contest.objects.filter(
-                is_active=True,
-                start_time__lte=now,
-                end_time__gt=now,
-            )
-            .order_by("end_time")
-        )
+        ongoing_qs = Contest.objects.filter(
+            is_active=True,
+            start_time__lte=now,
+            end_time__gt=now,
+        ).order_by("end_time")
 
-        upcoming_qs = (
-            Contest.objects.filter(
-                is_active=True,
-                start_time__gt=now,
-            )
-            .order_by("start_time")[:10]
-        )
+        upcoming_qs = Contest.objects.filter(
+            is_active=True,
+            start_time__gt=now,
+        ).order_by("start_time")[:10]
 
-        recent_past_qs = (
-            Contest.objects.filter(
-                end_time__lte=now,
-            )
-            .order_by("-end_time")[:10]
-        )
+        recent_past_qs = Contest.objects.filter(
+            end_time__lte=now,
+        ).order_by("-end_time")[:10]
 
         def serialize_contest(c: Contest) -> Dict:
             return {
@@ -197,8 +159,8 @@ class DashboardOverviewView(APIView):
         }
 
     def get_difficulty_breakdown(
-            self,
-            challenge_ids: Set[int],
+        self,
+        challenge_ids: Set[int],
     ) -> Dict[str, int]:
         """
         Return dict like { "Easy": 10, "Medium": 4, "Hard": 2, "Unknown": 1 }
@@ -212,11 +174,7 @@ class DashboardOverviewView(APIView):
                 "Unknown": 0,
             }
 
-        qs = (
-            Challenge.objects.filter(id__in=challenge_ids)
-            .values(level=F("difficulty__level"))
-            .annotate(count=Count("id"))
-        )
+        qs = Challenge.objects.filter(id__in=challenge_ids).values(level=F("difficulty__level")).annotate(count=Count("id"))
 
         result = {
             "Easy": 0,
@@ -235,8 +193,8 @@ class DashboardOverviewView(APIView):
         return result
 
     def get_category_breakdown(
-            self,
-            solved_ids: Set[int],
+        self,
+        solved_ids: Set[int],
     ) -> List[Dict]:
         """
         Return list of { category: "Arrays", solved_count: 5 } for solved challenges.
@@ -275,20 +233,12 @@ class DashboardOverviewView(APIView):
         }
 
         # --- SOLVED / ATTEMPTED CHALLENGES ---
-        practice_solved_ids = self.get_solved_challenge_ids(
-            user, question_type="practice"
-        )
-        competition_solved_ids = self.get_solved_challenge_ids(
-            user, question_type="competition"
-        )
+        practice_solved_ids = self.get_solved_challenge_ids(user, question_type="practice")
+        competition_solved_ids = self.get_solved_challenge_ids(user, question_type="competition")
         all_solved_ids = practice_solved_ids.union(competition_solved_ids)
 
-        practice_attempted_ids = self.get_attempted_challenge_ids(
-            user, question_type="practice"
-        )
-        competition_attempted_ids = self.get_attempted_challenge_ids(
-            user, question_type="competition"
-        )
+        practice_attempted_ids = self.get_attempted_challenge_ids(user, question_type="practice")
+        competition_attempted_ids = self.get_attempted_challenge_ids(user, question_type="competition")
         all_attempted_ids = practice_attempted_ids.union(competition_attempted_ids)
 
         # --- DIFFICULTY BREAKDOWN ---
@@ -346,19 +296,7 @@ class DashboardOverviewView(APIView):
 
 # dashboard/views.py
 from django.contrib.auth import get_user_model
-from django.utils import timezone
-from django.db.models import Q
-
 from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-
-from challenges.models import Challenge, Contest
-from submissions.models import (
-    UserFlagSubmission,
-    UserTextSubmission,
-    SubmissionStatus,
-)
 
 from .permissions import IsAdminOnly
 
@@ -383,12 +321,8 @@ class AdminDashboardTotalsView(APIView):
 
         # --- Challenges ---
         total_challenges = Challenge.objects.count()
-        total_practice_challenges = Challenge.objects.filter(
-            question_type="practice"
-        ).count()
-        total_competition_challenges = Challenge.objects.filter(
-            question_type="competition"
-        ).count()
+        total_practice_challenges = Challenge.objects.filter(question_type="practice").count()
+        total_competition_challenges = Challenge.objects.filter(question_type="competition").count()
 
         # --- Contests ---
         total_contests = Contest.objects.count()
@@ -401,32 +335,23 @@ class AdminDashboardTotalsView(APIView):
             is_active=True,
             start_time__gt=now,
         ).count()
-        ended_contests = Contest.objects.filter(
-            Q(is_active=False) | Q(end_time__lte=now)
-        ).count()
+        ended_contests = Contest.objects.filter(Q(is_active=False) | Q(end_time__lte=now)).count()
 
         # --- Submissions ---
         total_flag_submissions = UserFlagSubmission.objects.count()
         total_text_submissions = UserTextSubmission.objects.count()
         total_submissions = total_flag_submissions + total_text_submissions
 
-        solved_status = SubmissionStatus.objects.filter(
-            status__iexact="solved"
-        ).first()
+        solved_status = SubmissionStatus.objects.filter(status__iexact="solved").first()
         if solved_status:
-            solved_flag = UserFlagSubmission.objects.filter(
-                status=solved_status
-            ).count()
-            solved_text = UserTextSubmission.objects.filter(
-                status=solved_status
-            ).count()
+            solved_flag = UserFlagSubmission.objects.filter(status=solved_status).count()
+            solved_text = UserTextSubmission.objects.filter(status=solved_status).count()
             solved_submissions = solved_flag + solved_text
         else:
             solved_submissions = 0
 
         distinct_submitters = (
-            UserFlagSubmission.objects.values("user_id").distinct().count()
-            + UserTextSubmission.objects.values("user_id").distinct().count()
+            UserFlagSubmission.objects.values("user_id").distinct().count() + UserTextSubmission.objects.values("user_id").distinct().count()
         )
 
         payload = {

@@ -2,42 +2,38 @@
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import DatabaseError, IntegrityError, transaction
+from django.db.models import Count, Q
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import viewsets, status
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import (
+    MethodNotAllowed,
+    NotFound,
+    PermissionDenied,
+    ValidationError,
+)
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import Role, EmailVerificationToken, Group, UserGroup, GroupInvitation
+from .models import EmailVerificationToken, Group, GroupInvitation, Role, UserGroup
 from .permissions import IsAdminUser, IsOwnerOrAdmin
-from .serializers import RegisterSerializer, MyTokenObtainPairSerializer, GroupListSerializer, ChangePasswordSerializer
-from .utils import send_verification_email, generate_secure_uuid, send_reset_password_email, get_user_group_membership, \
-    ensure_group_admin
-from django.shortcuts import get_object_or_404
-from django.db.models import Q, Count
-from django.contrib.auth import get_user_model
-
-from .models import Group, UserGroup, GroupInvitation
-
-
-from django.contrib.auth import get_user_model
-from django.db import transaction, IntegrityError, DatabaseError
-from django.db.models import Q
-from django.shortcuts import get_object_or_404
-
-from rest_framework import status, viewsets
-from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied, MethodNotAllowed, NotFound, ValidationError
-
-from .models import Group, UserGroup, GroupInvitation
-from .serializers import EmptySerializer
+from .serializers import (
+    ChangePasswordSerializer,
+    GroupListSerializer,
+    MyTokenObtainPairSerializer,
+    RegisterSerializer,
+)
+from .utils import (
+    generate_secure_uuid,
+    send_reset_password_email,
+    send_verification_email,
+)
 
 User = get_user_model()
-
 
 
 # ----------------------
@@ -46,20 +42,10 @@ User = get_user_model()
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
 
-from django.utils import timezone
-from datetime import timedelta
 
-from rest_framework import viewsets, status
-from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
-from rest_framework.response import Response
-from rest_framework import serializers
+from rest_framework.permissions import IsAdminUser
 
-from .models import User, Role, EmailVerificationToken
-from .serializers import RegisterSerializer
-from .permissions import IsOwnerOrAdmin
-from .utils import generate_secure_uuid
-
+from .models import User
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -163,127 +149,37 @@ class UserViewSet(viewsets.ModelViewSet):
 
 
 # ----------------------
-# User Management
-# ----------------------
-# class UserViewSet(viewsets.ModelViewSet):
-#     queryset = User.objects.all()
-#     serializer_class = RegisterSerializer
-#     permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
-#
-#     def get_permissions(self):
-#         if self.action in ['list', 'destroy', 'update', 'partial_update']:
-#             permission_classes = [IsAuthenticated, IsAdminUser]
-#         elif self.action in ['register', 'verify_reset_user_password']:
-#             permission_classes = []
-#         else:
-#             permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
-#         return [perm() for perm in permission_classes]
-#
-#     @action(detail=False, methods=['post'], permission_classes=[])
-#     def register(self, request):
-#         """
-#         Student registration endpoint
-#         """
-#         try:
-#             serializer = self.get_serializer(data=request.data)
-#             serializer.is_valid(raise_exception=True)
-#
-#             user = serializer.save()  # creates user with is_active=False, role=student
-#
-#             # Generate verification token
-#             token = generate_secure_uuid()
-#             student_role = Role.objects.get(name='student')
-#
-#             EmailVerificationToken.objects.create(
-#                 user=user,
-#                 token=token,
-#                 role=student_role,
-#                 expires_at=timezone.now() + timedelta(days=2)
-#             )
-#             send_verification_email(user, token, 'student')
-#
-#             return Response(
-#                 {"detail": "Verification email sent to your email address."},
-#                 status=status.HTTP_201_CREATED,
-#             )
-#         except Exception as e:
-#             return Response(
-#                 {"error": "Error while registering student."},
-#                 status=status.HTTP_400_BAD_REQUEST,
-#             )
-#
-#     @action(detail=False, methods=['post'], permission_classes=[], url_path='verify-reset-password')
-#     def verify_reset_user_password(self, request):
-#         """
-#         Generate Password reset token and sent to user email
-#         """
-#         email = request.data.get('email')
-#
-#         if not email:
-#             return Response({"error": "Email  required"}, status=status.HTTP_400_BAD_REQUEST)
-#         try:
-#             user = User.objects.get(email=email)
-#         except User.DoesNotExist:
-#             return Response({"error": "Email role does not exist"}, status=status.HTTP_400_BAD_REQUEST)
-#
-#         try:
-#
-#             token = generate_secure_uuid()
-#             EmailVerificationToken.objects.create(
-#                 user=user,
-#                 token=token,
-#                 role=user.role,
-#                 expires_at=timezone.now() + timedelta(days=2)
-#             )
-#             send_reset_password_email(user, token)
-#         except Exception as e:
-#             return Response({"error": "Error while registering admin."}, status.HTTP_400_BAD_REQUEST)
-#
-#         return Response({"detail": "Reset password email sent to the new admin."}, status=status.HTTP_200_OK)
-#
-
-# ----------------------
 # Admin Invite Management
 # ----------------------
 class AdminInviteViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=["post"])
     def generate(self, request):
         """
         Admin triggers registration for new admin
         """
-        email = request.data.get('email')
-        username = request.data.get('username')
+        email = request.data.get("email")
+        username = request.data.get("username")
 
         if not email or not username:
             return Response({"error": "Email and username required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            admin_role = Role.objects.get(name='admin')
+            admin_role = Role.objects.get(name="admin")
         except Role.DoesNotExist:
             return Response({"error": "Admin role does not exist"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             # Create inactive user
-            user = User.objects.create(
-                username=username,
-                email=email,
-                role=None,
-                is_active=False
-            )
+            user = User.objects.create(username=username, email=email, role=None, is_active=False)
 
             # Generate verification token
             token = generate_secure_uuid()
-            EmailVerificationToken.objects.create(
-                user=user,
-                token=token,
-                role=admin_role,
-                expires_at=timezone.now() + timedelta(days=2)
-            )
+            EmailVerificationToken.objects.create(user=user, token=token, role=admin_role, expires_at=timezone.now() + timedelta(days=2))
 
-            send_verification_email(user, token, 'admin')
-        except Exception as e:
+            send_verification_email(user, token, "admin")
+        except Exception:
             return Response({"error": "Error while registering admin."}, status.HTTP_400_BAD_REQUEST)
 
         return Response({"detail": "Verification email sent to the new admin."}, status=status.HTTP_200_OK)
@@ -297,12 +193,13 @@ class VerifyEmailView(APIView):
     Endpoint to verify email and set password.
     Works for both students and admin registrations.
     """
+
     permission_classes = []
 
     def post(self, request):
-        token_param = request.data.get('token')
-        password = request.data.get('password')
-        confirm_password = request.data.get('confirm_password')
+        token_param = request.data.get("token")
+        password = request.data.get("password")
+        confirm_password = request.data.get("confirm_password")
         if confirm_password != password:
             return Response({"error": "Passwords donot match."}, status.HTTP_400_BAD_REQUEST)
 
@@ -330,20 +227,14 @@ class VerifyEmailView(APIView):
 
         return Response({"detail": "Password set successfully. You can now login."}, status=status.HTTP_201_CREATED)
 
+
 class UserGroupViewSet(viewsets.ModelViewSet):
-
-
     queryset = Group.objects.all()
     serializer_class = GroupListSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return (
-            Group.objects.all()
-            .annotate(members_count=Count("members"))
-            .prefetch_related("members__user")
-            .order_by("name")
-        )
+        return Group.objects.all().annotate(members_count=Count("members")).prefetch_related("members__user").order_by("name")
 
     def list(self, request, *args, **kwargs):
         if not request.user.is_admin:
@@ -389,7 +280,6 @@ class UserGroupViewSet(viewsets.ModelViewSet):
         if not membership.is_admin:
             raise PermissionDenied("Only the group admin can perform this action.")
 
-
     def create(self, request, *args, **kwargs):
         """
         POST /groups/
@@ -405,23 +295,18 @@ class UserGroupViewSet(viewsets.ModelViewSet):
         max_members = request.data.get("max_members", 2)
 
         if int(min_members) < 2 and int(max_members) > 10:
-            return Response({"error": "Minimum or maximum members do not fall within 2-10 range."},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Minimum or maximum members do not fall within 2-10 range."}, status=status.HTTP_400_BAD_REQUEST)
 
         if not name:
-            return Response({"error": "Group name is required."},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Group name is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             with transaction.atomic():
-
                 if UserGroup.objects.select_for_update().filter(user=user).exists():
-                    return Response({"error": "You already belong to a group."},
-                                    status=status.HTTP_400_BAD_REQUEST)
+                    return Response({"error": "You already belong to a group."}, status=status.HTTP_400_BAD_REQUEST)
 
                 if Group.objects.filter(name__iexact=name).exists():
-                    return Response({"error": "A group with this name already exists."},
-                                    status=status.HTTP_400_BAD_REQUEST)
+                    return Response({"error": "A group with this name already exists."}, status=status.HTTP_400_BAD_REQUEST)
 
                 group = Group.objects.create(
                     name=name,
@@ -436,8 +321,7 @@ class UserGroupViewSet(viewsets.ModelViewSet):
                 )
 
         except IntegrityError:
-            return Response({"error": "Unable to create group. It may already exist."},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Unable to create group. It may already exist."}, status=status.HTTP_400_BAD_REQUEST)
 
         data = {
             "id": group.id,
@@ -447,7 +331,6 @@ class UserGroupViewSet(viewsets.ModelViewSet):
             "is_admin": True,
         }
         return Response(data, status=status.HTTP_201_CREATED)
-
 
     def destroy(self, request, pk=None, *args, **kwargs):
         """
@@ -474,11 +357,7 @@ class UserGroupViewSet(viewsets.ModelViewSet):
         try:
             with transaction.atomic():
                 # Lock the row to avoid race conditions (e.g., admin transfer / concurrent delete)
-                group = (
-                    Group.objects.select_for_update()
-                    .filter(pk=group_id)
-                    .first()
-                )
+                group = Group.objects.select_for_update().filter(pk=group_id).first()
                 if not group:
                     # Safe: generic "not found"
                     raise NotFound(detail="Group not found.")
@@ -527,11 +406,7 @@ class UserGroupViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_200_OK,
             )
 
-        members_qs = (
-            UserGroup.objects.filter(group=group)
-            .select_related("user")
-            .order_by("user__username")
-        )
+        members_qs = UserGroup.objects.filter(group=group).select_related("user").order_by("user__username")
         members = [
             {
                 "id": m.user.id,
@@ -606,11 +481,7 @@ class UserGroupViewSet(viewsets.ModelViewSet):
 
         exclude_ids = set(member_ids) | set(invited_ids) | {user.id}
 
-        qs = (
-            User.objects.filter(Q(username__icontains=q) | Q(email__icontains=q))
-            .exclude(id__in=exclude_ids)
-            .order_by("username")[:20]
-        )
+        qs = User.objects.filter(Q(username__icontains=q) | Q(email__icontains=q)).exclude(id__in=exclude_ids).order_by("username")[:20]
 
         results = [{"id": u.id, "username": u.username, "email": u.email} for u in qs]
         return Response(results, status=status.HTTP_200_OK)
@@ -799,12 +670,7 @@ class UserGroupViewSet(viewsets.ModelViewSet):
             raise ValidationError({"error": "Invalid invitation id."})
 
         with transaction.atomic():
-            invite = (
-                GroupInvitation.objects.select_for_update()
-                .select_related("group", "user")
-                .filter(id=inv_id)
-                .first()
-            )
+            invite = GroupInvitation.objects.select_for_update().select_related("group", "user").filter(id=inv_id).first()
             if not invite:
                 raise NotFound(detail="Invitation not found.")
 
@@ -855,12 +721,7 @@ class UserGroupViewSet(viewsets.ModelViewSet):
             raise ValidationError({"error": "Invalid invitation id."})
 
         with transaction.atomic():
-            invite = (
-                GroupInvitation.objects.select_for_update()
-                .select_related("user")
-                .filter(id=inv_id)
-                .first()
-            )
+            invite = GroupInvitation.objects.select_for_update().select_related("user").filter(id=inv_id).first()
             if not invite:
                 raise NotFound(detail="Invitation not found.")
 
@@ -874,7 +735,6 @@ class UserGroupViewSet(viewsets.ModelViewSet):
             invite.save(update_fields=["status"])
 
         return Response({"detail": "Invitation declined."}, status=status.HTTP_200_OK)
-
 
     @action(detail=False, methods=["get"], url_path="me/exists")
     def is_in_group(self, request):
@@ -890,5 +750,3 @@ class UserGroupViewSet(viewsets.ModelViewSet):
             {"in_group": exists},
             status=status.HTTP_200_OK,
         )
-
-

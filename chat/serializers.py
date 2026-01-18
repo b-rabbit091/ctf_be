@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from rest_framework import serializers
@@ -13,11 +12,7 @@ class ChatRequestSerializer(serializers.Serializer):
     def validate(self, attrs):
         ctx = attrs.get("context") or {}
         # Accept multiple possible keys from frontend context
-        challenge_id = (
-            ctx.get("challenge_id")
-            or ctx.get("challenge")
-            or ctx.get("challengeId")
-        )
+        challenge_id = ctx.get("challenge_id") or ctx.get("challenge") or ctx.get("challengeId")
         if challenge_id is None:
             raise serializers.ValidationError({"context": "context.challenge_id is required."})
 
@@ -39,9 +34,6 @@ class ChatResponseSerializer(serializers.Serializer):
     id = serializers.CharField(required=False)
     created_at = serializers.CharField(required=False)
     percent_on_track = serializers.IntegerField(min_value=0, max_value=100, required=False)
-
-
-
 
 
 class ChatHistoryQuerySerializer(serializers.Serializer):

@@ -1,26 +1,22 @@
-from rest_framework import serializers
-
-from submissions.llm import call_coach_llm
-from . import utils
-
-from django.shortcuts import get_object_or_404
-from .utils import SolutionUtils
-
-from submissions.models import (
-    UserFlagSubmission,
-    UserTextSubmission,
-    SubmissionStatus,
-    GroupFlagSubmission,
-    GroupTextSubmission
-)
-
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from challenges.models import Challenge, Contest, FlagSolution, TextSolution
+from submissions.llm import call_coach_llm
+from submissions.models import (
+    GroupFlagSubmission,
+    GroupTextSubmission,
+    SubmissionStatus,
+    UserFlagSubmission,
+    UserTextSubmission,
+)
 from users.models import UserGroup
+
+from . import utils
+from .utils import SolutionUtils
 
 
 class BaseSubmissionSerializer(serializers.ModelSerializer):
@@ -62,15 +58,11 @@ class BaseSubmissionSerializer(serializers.ModelSerializer):
 
             # Ensure challenge is part of this contest
             if not contest.challenges.filter(pk=challenge.pk).exists():
-                raise serializers.ValidationError(
-                    {"contest_id": "This challenge is not part of the specified contest."}
-                )
+                raise serializers.ValidationError({"contest_id": "This challenge is not part of the specified contest."})
 
             # Enforce time window for competition submissions
             if not (contest.start_time <= now <= contest.end_time):
-                raise serializers.ValidationError(
-                    {"contest_id": "This contest is not accepting submissions at this time."}
-                )
+                raise serializers.ValidationError({"contest_id": "This contest is not accepting submissions at this time."})
 
         return challenge, contest
 
@@ -130,9 +122,7 @@ class FlagSubmissionSerializer(BaseSubmissionSerializer):
         sol_label = (getattr(sol_type, "type", "") or "").lower()
 
         if sol_label not in ("flag", "both"):
-            raise serializers.ValidationError(
-                {"challenge_id": "This challenge does not accept flag submissions."}
-            )
+            raise serializers.ValidationError({"challenge_id": "This challenge does not accept flag submissions."})
 
         attrs["challenge_obj"] = challenge
         attrs["contest_obj"] = contest
@@ -147,9 +137,7 @@ class FlagSubmissionSerializer(BaseSubmissionSerializer):
         value = validated_data["value"].strip()
 
         # Evaluate correctness against FlagSolution
-        is_correct = FlagSolution.objects.filter(
-            challenges=challenge, value=value
-        ).exists()
+        is_correct = FlagSolution.objects.filter(challenges=challenge, value=value).exists()
 
         status = self._get_status_for_result(is_correct)
 
@@ -163,7 +151,6 @@ class FlagSubmissionSerializer(BaseSubmissionSerializer):
         return submission
 
     def to_representation(self, instance):
-
         base = super().to_representation(instance)
 
         # Base response (shared for contest + practice)
@@ -223,9 +210,7 @@ class TextSubmissionSerializer(BaseSubmissionSerializer):
 
         # "flag" only, "text" only, or "both"
         if sol_label not in ("text", "both"):
-            raise serializers.ValidationError(
-                {"challenge_id": "This challenge does not accept text submissions."}
-            )
+            raise serializers.ValidationError({"challenge_id": "This challenge does not accept text submissions."})
 
         attrs["challenge_obj"] = challenge
         attrs["contest_obj"] = contest
@@ -237,9 +222,7 @@ class TextSubmissionSerializer(BaseSubmissionSerializer):
         You can swap to __iexact or custom logic if needed.
         """
         normalized = content.strip()
-        return TextSolution.objects.filter(
-            challenges=challenge, content=normalized
-        ).exists()
+        return TextSolution.objects.filter(challenges=challenge, content=normalized).exists()
 
     def create(self, validated_data):
         request = self.context["request"]
@@ -408,11 +391,7 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
 
         contest = self._get_contest_for_challenge(challenge)
 
-        challenge = (
-            Challenge.objects
-            .select_related("challenge_score")
-            .get(id=challenge.id)
-        )
+        challenge = Challenge.objects.select_related("challenge_score").get(id=challenge.id)
 
         response = {
             "challenge_id": challenge.id,
@@ -431,23 +410,19 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
                 user_score = flag_score
 
             obj = UserFlagSubmission.objects.create(
-                user=user,
-                challenge=challenge,
-                contest=contest,
-                value=value,
-                status=status_obj,
-                user_score=user_score
+                user=user, challenge=challenge, contest=contest, value=value, status=status_obj, user_score=user_score
             )
 
-            response["results"].append({
-                "type": "flag",
-                "correct": is_correct,
-                "status": obj.status.status,
-                "submitted_at": obj.submitted_at,
-                "submitted_value": value,
-                "score": user_score
-
-            })
+            response["results"].append(
+                {
+                    "type": "flag",
+                    "correct": is_correct,
+                    "status": obj.status.status,
+                    "submitted_at": obj.submitted_at,
+                    "submitted_value": value,
+                    "score": user_score,
+                }
+            )
 
         # PROCEDURE
         if "content" in validated_data:
@@ -491,15 +466,16 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
             except Exception:
                 obj = None
 
-            response["results"].append({
-                "type": "procedure",
-                "correct": is_correct,
-                "status": obj.status.status,
-                "submitted_at": obj.submitted_at,
-                "submitted_content": content,
-                "user_score": user_score
-
-            })
+            response["results"].append(
+                {
+                    "type": "procedure",
+                    "correct": is_correct,
+                    "status": obj.status.status,
+                    "submitted_at": obj.submitted_at,
+                    "submitted_content": content,
+                    "user_score": user_score,
+                }
+            )
 
         return response
 
@@ -627,11 +603,13 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
                 group_score=group_score,
             )
 
-            response["results"].append({
-                "type": "flag",
-                "submitted_at": obj.submitted_at,
-                "submitted_value": value,
-            })
+            response["results"].append(
+                {
+                    "type": "flag",
+                    "submitted_at": obj.submitted_at,
+                    "submitted_value": value,
+                }
+            )
 
         # PROCEDURE
         if "content" in validated_data:
@@ -676,29 +654,40 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
                 group_score=group_score,
             )
 
-            response["results"].append({
-                "type": "procedure",
-                "submitted_at": obj.submitted_at,
-                "submitted_content": content,
-            })
+            response["results"].append(
+                {
+                    "type": "procedure",
+                    "submitted_at": obj.submitted_at,
+                    "submitted_content": content,
+                }
+            )
 
         return response
 
 
 from rest_framework import serializers
-from submissions.models import GroupFlagSubmission, GroupTextSubmission
 
-
-from rest_framework import serializers
-from submissions.models import GroupFlagSubmission, GroupTextSubmission
 
 class GroupFlagSubmissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = GroupFlagSubmission
         fields = ["id", "submitted_at", "value"]
 
+
 class GroupTextSubmissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = GroupTextSubmission
         fields = ["id", "submitted_at", "content"]
 
+
+class LeaderboardEntrySerializer(serializers.Serializer):
+    rank = serializers.IntegerField()
+    user_id = serializers.IntegerField()
+    username = serializers.CharField()
+    total_score = serializers.IntegerField()
+
+
+class LeaderboardResponseSerializer(serializers.Serializer):
+    type = serializers.CharField()
+    contest = serializers.CharField(allow_null=True)
+    results = LeaderboardEntrySerializer(many=True)

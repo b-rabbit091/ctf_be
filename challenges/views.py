@@ -1,10 +1,18 @@
-from rest_framework import viewsets, permissions, status
-from .models import Challenge, Category, Difficulty, SolutionType, Contest
-from .permissions import IsAdminOrReadOnly
-from .serializers import ChallengeDetailSerializer, ChallengeListSerializer, CategorySerializer, \
-    DifficultySerializer, SolutionTypeSerializer, ChallengeUpdateSerializer, ContestSerializer
+from rest_framework import permissions, status, viewsets
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
-from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
+
+from .models import Category, Challenge, Contest, Difficulty, SolutionType
+from .permissions import IsAdminOrReadOnly
+from .serializers import (
+    CategorySerializer,
+    ChallengeDetailSerializer,
+    ChallengeListSerializer,
+    ChallengeUpdateSerializer,
+    ContestSerializer,
+    DifficultySerializer,
+    SolutionTypeSerializer,
+)
 
 
 class ChallengeViewSet(viewsets.ModelViewSet):

@@ -1,14 +1,11 @@
 # users/utils.py
-from django.core.mail import send_mail
-from django.utils import timezone
-from rest_framework.response import Response
-from rest_framework import viewsets, status
-
 from django.conf import settings
-
 from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
+from rest_framework import status
+from rest_framework.response import Response
 
-from users.models import UserGroup, Group
+from users.models import Group, UserGroup
 
 User = get_user_model()
 
@@ -73,7 +70,6 @@ This link is valid for 48 hours.
 
 
 import uuid
-from django.conf import settings
 
 
 def generate_secure_uuid():

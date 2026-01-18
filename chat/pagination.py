@@ -10,6 +10,7 @@ class ChatTurnCursorPagination(CursorPagination):
     - First page: latest messages
     - next: older messages
     """
+
     page_size = 20
     ordering = "-created_at"
     cursor_query_param = "cursor"

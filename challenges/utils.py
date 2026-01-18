@@ -2,10 +2,10 @@
 import zipfile
 from pathlib import Path
 
+import magic  # python-magic
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from PIL import Image
-import magic  # python-magic
 
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
@@ -72,6 +72,4 @@ def challenge_file_upload_path(instance, filename):
     Upload path: challenges/<challenge_id>/<filename>
     """
 
-    return (
-        f"challenges/{instance.challenge.id}/{filename}"
-    )
+    return f"challenges/{instance.challenge.id}/{filename}"

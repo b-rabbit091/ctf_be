@@ -6,21 +6,16 @@ from django.utils.text import slugify
 from rest_framework import serializers
 
 from users.models import UserGroup
-from .models import Challenge, Category, Difficulty, SolutionType, ChallengeFile, Contest
-from .utils import validate_uploaded_file
-from django.db import transaction
-from django.utils.text import slugify
-from rest_framework import serializers
 
-from rest_framework import serializers
 from .models import (
-    Challenge,
     Category,
+    Challenge,
+    ChallengeFile,
+    Contest,
     Difficulty,
     SolutionType,
-    ChallengeFile,
 )
-from .utils import validate_uploaded_file  # your file validator
+from .utils import validate_uploaded_file
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -91,24 +86,31 @@ class ChallengeListSerializer(serializers.ModelSerializer):
             "active_contest",
             "group_only",
             "can_participate",
-
         ]
 
     def get_active_contest(self, obj):
         now = timezone.now()
-        active = obj.contests.filter(
-            start_time__lte=now,
-            end_time__gte=now,
-            is_active=True,
-        ).order_by("start_time").first()
+        active = (
+            obj.contests.filter(
+                start_time__lte=now,
+                end_time__gte=now,
+                is_active=True,
+            )
+            .order_by("start_time")
+            .first()
+        )
 
         if active:
             return ContestSerializer(active).data
 
-        upcoming = obj.contests.filter(
-            start_time__gt=now,
-            is_active=True,
-        ).order_by("start_time").first()
+        upcoming = (
+            obj.contests.filter(
+                start_time__gt=now,
+                is_active=True,
+            )
+            .order_by("start_time")
+            .first()
+        )
 
         if upcoming:
             return ContestSerializer(upcoming).data
@@ -152,7 +154,6 @@ class ChallengeDetailSerializer(serializers.ModelSerializer):
             "difficulty",
             "solution_type",
             "active_contest",
-
         ]
 
     def get_active_contest(self, obj):
@@ -166,20 +167,12 @@ class ChallengeDetailSerializer(serializers.ModelSerializer):
         now = timezone.now()
 
         # 1) contest currently running: start_time <= now <= end_time
-        running_qs = (
-            obj.contests
-            .filter(start_time__lte=now, end_time__gte=now)
-            .order_by("start_time")
-        )
+        running_qs = obj.contests.filter(start_time__lte=now, end_time__gte=now).order_by("start_time")
         contest = running_qs.first()
 
         # 2) if none running, you can optionally expose the next upcoming one
         if contest is None:
-            upcoming_qs = (
-                obj.contests
-                .filter(start_time__gt=now)
-                .order_by("start_time")
-            )
+            upcoming_qs = obj.contests.filter(start_time__gt=now).order_by("start_time")
             contest = upcoming_qs.first()
 
         if not contest:
@@ -198,15 +191,9 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
     """
 
     # FK fields as PKs
-    category = serializers.PrimaryKeyRelatedField(
-        queryset=Category.objects.all(), required=False, allow_null=True
-    )
-    difficulty = serializers.PrimaryKeyRelatedField(
-        queryset=Difficulty.objects.all(), required=False, allow_null=True
-    )
-    solution_type = serializers.PrimaryKeyRelatedField(
-        queryset=SolutionType.objects.all(), required=False, allow_null=True
-    )
+    category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), required=False, allow_null=True)
+    difficulty = serializers.PrimaryKeyRelatedField(queryset=Difficulty.objects.all(), required=False, allow_null=True)
+    solution_type = serializers.PrimaryKeyRelatedField(queryset=SolutionType.objects.all(), required=False, allow_null=True)
 
     # practice / competition
     question_type = serializers.ChoiceField(
@@ -223,26 +210,16 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
     )
 
     # ---- Contest (competition-only) fields: write-only & optional ----
-    contest_name = serializers.CharField(
-        write_only=True, required=False, allow_blank=True
-    )
-    contest_slug = serializers.SlugField(
-        write_only=True, required=False, allow_blank=True
-    )
-    contest_description = serializers.CharField(
-        write_only=True, required=False, allow_blank=True
-    )
+    contest_name = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    contest_slug = serializers.SlugField(write_only=True, required=False, allow_blank=True)
+    contest_description = serializers.CharField(write_only=True, required=False, allow_blank=True)
     contest_type = serializers.ChoiceField(
         write_only=True,
         required=False,
         choices=Contest.CONTEST_TYPE_CHOICES,
     )
-    contest_start_time = serializers.DateTimeField(
-        write_only=True, required=False
-    )
-    contest_end_time = serializers.DateTimeField(
-        write_only=True, required=False
-    )
+    contest_start_time = serializers.DateTimeField(write_only=True, required=False)
+    contest_end_time = serializers.DateTimeField(write_only=True, required=False)
     active_contest = serializers.SerializerMethodField()
 
     class Meta:
@@ -268,7 +245,6 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             "contest_start_time",
             "contest_end_time",
             "active_contest",
-
         ]
 
     def get_active_contest(self, obj):
@@ -291,11 +267,7 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
         if running:
             return ContestSerializer(running).data
 
-        upcoming = (
-            obj.contests.filter(start_time__gt=now)
-            .order_by("start_time")
-            .first()
-        )
+        upcoming = obj.contests.filter(start_time__gt=now).order_by("start_time").first()
         if upcoming:
             return ContestSerializer(upcoming).data
 
@@ -333,9 +305,7 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
         # 1) PRACTICE: contest fields should NOT be sent
         if ((qtype or attrs.get("question_type")) == "practice") and any_contest_field:
-            raise serializers.ValidationError(
-                {"contest": "Contest fields are only allowed for competition challenges."}
-            )
+            raise serializers.ValidationError({"contest": "Contest fields are only allowed for competition challenges."})
 
         # 2) COMPETITION: if contest data is provided, validate it
         if (qtype == "competition") and any_contest_field and not instance:
@@ -344,35 +314,23 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             end = contest_fields.get("contest_end_time")
 
             if not name:
-                raise serializers.ValidationError(
-                    {"contest_name": "Contest name is required for competition challenges."}
-                )
+                raise serializers.ValidationError({"contest_name": "Contest name is required for competition challenges."})
             if not start or not end:
-                raise serializers.ValidationError(
-                    {"contest_time": "Both contest_start_time and contest_end_time are required."}
-                )
+                raise serializers.ValidationError({"contest_time": "Both contest_start_time and contest_end_time are required."})
             if end <= start:
-                raise serializers.ValidationError(
-                    {"contest_time": "contest_end_time must be after contest_start_time."}
-                )
+                raise serializers.ValidationError({"contest_time": "contest_end_time must be after contest_start_time."})
 
             # Slug: generate if empty
             slug = contest_fields.get("contest_slug") or slugify(name)
             if Contest.objects.filter(slug=slug).exists():
-                raise serializers.ValidationError(
-                    {"contest_slug": "Contest slug already exists. Please choose another one."}
-                )
+                raise serializers.ValidationError({"contest_slug": "Contest slug already exists. Please choose another one."})
             attrs["contest_slug"] = slug
 
         # 3) Prevent changing question_type on challenges already in contests
         if instance and "question_type" in attrs:
             new_qtype = attrs["question_type"]
             if new_qtype != instance.question_type and instance.contests.exists():
-                raise serializers.ValidationError(
-                    {
-                        "question_type": "Cannot change question_type for a challenge already used in contests."
-                    }
-                )
+                raise serializers.ValidationError({"question_type": "Cannot change question_type for a challenge already used in contests."})
 
         return attrs
 
@@ -417,12 +375,7 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
         challenge = super().create(validated_data)
 
         # 2) Create contest ONLY for competition + when contest data exists
-        if (
-                qtype == "competition"
-                and contest_name
-                and contest_start_time
-                and contest_end_time
-        ):
+        if qtype == "competition" and contest_name and contest_start_time and contest_end_time:
             contest = Contest.objects.create(
                 name=contest_name,
                 slug=contest_slug,  # already validated or auto-generated
@@ -439,8 +392,6 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             self._save_files(challenge, files)
 
         return challenge
-
-
 
     @transaction.atomic
     def update(self, instance, validated_data):
@@ -478,21 +429,16 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
             contest = challenge.contests.order_by("-start_time").first()
             if not contest:
-                raise serializers.ValidationError(
-                    {"contest": "No contest is linked to this challenge to update."}
-                )
+                raise serializers.ValidationError({"contest": "No contest is linked to this challenge to update."})
 
             # Validate/update times (only if any time is provided)
             if contest_start_time is not None or contest_end_time is not None:
                 new_start = contest_start_time if contest_start_time is not None else contest.start_time
                 new_end = contest_end_time if contest_end_time is not None else contest.end_time
                 if new_end <= new_start:
-                    raise serializers.ValidationError(
-                        {"contest_time": "contest_end_time must be after contest_start_time."}
-                    )
+                    raise serializers.ValidationError({"contest_time": "contest_end_time must be after contest_start_time."})
                 contest.start_time = new_start
                 contest.end_time = new_end
-
 
             new_slug = None
             if contest_slug is not None:
@@ -507,9 +453,7 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
             if new_slug and new_slug != contest.slug:
                 if Contest.objects.filter(slug=new_slug).exclude(pk=contest.pk).exists():
-                    raise serializers.ValidationError(
-                        {"contest_slug": "Contest slug already exists. Please choose another one."}
-                    )
+                    raise serializers.ValidationError({"contest_slug": "Contest slug already exists. Please choose another one."})
                 contest.slug = new_slug
 
             # Apply other fields only if provided
@@ -527,4 +471,3 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             self._save_files(challenge, files)
 
         return challenge
-

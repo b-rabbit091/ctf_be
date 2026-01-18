@@ -1,17 +1,15 @@
-from django.db import models
-
 # Create your models here.
-
-
 # chat/models.py
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+
 class ChatThread(models.Model):
     """
     One thread per user+challenge (or multiple if you want; we keep it simple).
     """
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="chat_threads")
     challenge_id = models.PositiveIntegerField(db_index=True)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)

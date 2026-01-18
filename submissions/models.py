@@ -1,7 +1,3 @@
-from django.db import models
-from users.models import User
-from challenges.models import Challenge, Contest, FlagSolution, TextSolution
-
 from django.conf import settings
 from django.db import models
 
@@ -20,6 +16,7 @@ class BaseUserSubmission(models.Model):
     Practice submissions: contest is NULL.
     Competition submissions: contest is set.
     """
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -54,6 +51,7 @@ class UserFlagSubmission(BaseUserSubmission):
     """
     One flag submission for a single challenge (and optionally a contest).
     """
+
     value = models.CharField(
         max_length=255,
         help_text="User flag value",
@@ -67,12 +65,12 @@ class UserTextSubmission(BaseUserSubmission):
     """
     One text submission for a single challenge (and optionally a contest).
     """
+
     content = models.TextField(help_text="User text solution")
 
     def __str__(self):
         # truncate for readability
         return f"{self.user} :: {self.challenge_id} :: {self.content[:50]}{'...' if len(self.content) > 50 else ''}"
-
 
 
 # submissions/models.py
@@ -81,6 +79,7 @@ from django.conf import settings
 from django.db import models
 
 from users.models import Group  # adjust import to your app
+
 # or from .models import Group if in same app
 
 
@@ -90,6 +89,7 @@ class BaseGroupSubmission(models.Model):
     Practice: contest NULL
     Competition: contest set
     """
+
     group = models.ForeignKey(
         Group,
         on_delete=models.CASCADE,

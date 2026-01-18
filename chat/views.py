@@ -1,28 +1,29 @@
 # chat/views.py
 from __future__ import annotations
 
-from django.db import  IntegrityError, transaction
-
-from rest_framework.throttling import UserRateThrottle
-from rest_framework.views import APIView
-
-from challenges.models import FlagSolution, TextSolution  # adjust if app name differs
-from .llm import call_coach_llm
-from .serializers import ChatRequestSerializer
-
+from django.db import DatabaseError, IntegrityError, transaction
 from django.utils import timezone
-
-from django.db import DatabaseError
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
+from rest_framework.views import APIView
 
-from challenges.models import Challenge
+from challenges.models import (  # adjust if app name differs
+    Challenge,
+    FlagSolution,
+    TextSolution,
+)
+
+from .llm import call_coach_llm
 from .models import ChatThread, ChatTurn
 from .pagination import ChatTurnCursorPagination
-from .serializers import ChatHistoryQuerySerializer, ChatTurnHistorySerializer
-
+from .serializers import (
+    ChatHistoryQuerySerializer,
+    ChatRequestSerializer,
+    ChatTurnHistorySerializer,
+)
 
 
 class ChatPracticeThrottle(UserRateThrottle):
@@ -37,8 +38,7 @@ def safe_error(message: str, http_status: int = 400) -> Response:
     return Response({"detail": message}, status=http_status)
 
 
-def safe_ok(reply: str, turn_id: str | None = None, created_at: str | None = None,
-            percent: int | None = None) -> Response:
+def safe_ok(reply: str, turn_id: str | None = None, created_at: str | None = None, percent: int | None = None) -> Response:
     payload = {"reply": reply}
     if turn_id is not None:
         payload["id"] = str(turn_id)
@@ -70,19 +70,11 @@ def _get_solution_for_challenge(ch: Challenge) -> dict:
     Must never be returned to user.
     """
     try:
-        flag = (
-            FlagSolution.objects.filter(challenges=ch)
-            .values_list("value", flat=True)
-            .first()
-        )
+        flag = FlagSolution.objects.filter(challenges=ch).values_list("value", flat=True).first()
         if flag:
             return {"type": "flag", "value": flag}
 
-        text = (
-            TextSolution.objects.filter(challenges=ch)
-            .values_list("content", flat=True)
-            .first()
-        )
+        text = TextSolution.objects.filter(challenges=ch).values_list("content", flat=True).first()
         if text:
             return {"type": "text", "value": text}
     except DatabaseError:
@@ -139,10 +131,7 @@ class PracticeChatView(APIView):
 
             # 2) Load challenge safely
             try:
-                ch = (
-                    Challenge.objects.select_related("solution_type")
-                    .get(id=challenge_id, question_type="practice")
-                )
+                ch = Challenge.objects.select_related("solution_type").get(id=challenge_id, question_type="practice")
             except Challenge.DoesNotExist:
                 return safe_error("Challenge not found.", 404)
             except DatabaseError:
@@ -229,6 +218,7 @@ class ChatThreadViewSet(viewsets.ViewSet):
     - Only the user's own thread for challenge_id
     - Cursor pagination (newest first)
     """
+
     permission_classes = [IsAuthenticated]
     pagination_class = ChatTurnCursorPagination
 
@@ -266,12 +256,7 @@ class ChatThreadViewSet(viewsets.ViewSet):
             return safe_error("Database error while loading challenge. Please try again.", 503)
 
         try:
-            thread = (
-                ChatThread.objects
-                .filter(user=request.user, challenge_id=challenge_id)
-                .only("id", "challenge_id")
-                .first()
-            )
+            thread = ChatThread.objects.filter(user=request.user, challenge_id=challenge_id).only("id", "challenge_id").first()
         except DatabaseError:
             return safe_error("Database error while loading chat history. Please try again.", 503)
 
@@ -332,4 +317,3 @@ class ChatThreadViewSet(viewsets.ViewSet):
             return Response({"cleared": True}, status=status.HTTP_200_OK)
         except DatabaseError:
             return safe_error("Database error while clearing chat. Please try again.", 503)
-
