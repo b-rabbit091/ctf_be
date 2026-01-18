@@ -17,7 +17,8 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-BASE_URL = "http://localhost"
+# BASE_URL = "http://localhost"
+BASE_URL = "https://ctffetest.vercel.app"
 
 
 MEDIA_URL = "/media/"
