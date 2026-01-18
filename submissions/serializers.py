@@ -405,6 +405,8 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
             is_correct = self._check_flag_correct(challenge, value)
             status_obj = self._get_status_for_result(is_correct)
             flag_score = challenge.challenge_score.flag_score
+            if not flag_score:
+                flag_score = 1
             user_score = 0
             if is_correct:
                 user_score = flag_score
@@ -429,6 +431,8 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
             status_obj = self._get_status_for_result(is_correct)
             text_solution = SolutionUtils.get_text_solution_for_challenge(challenge)
             procedure_score = challenge.challenge_score.procedure_score
+            if not procedure_score:
+                procedure_score = 1
 
             score_analyser = None
 

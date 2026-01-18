@@ -77,6 +77,7 @@ MIDDLEWARE = [
 
 CORS_ALLOW_ALL_ORIGINS = True
 ROOT_URLCONF = "backend.urls"
+AUTH_USER_MODEL = "users.User"
 
 TEMPLATES = [
     {

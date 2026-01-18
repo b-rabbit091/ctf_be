@@ -86,6 +86,7 @@ class ChallengeListSerializer(serializers.ModelSerializer):
             "active_contest",
             "group_only",
             "can_participate",
+            "group_only",
         ]
 
     def get_active_contest(self, obj):
@@ -126,8 +127,14 @@ class ChallengeListSerializer(serializers.ModelSerializer):
         if not obj.group_only:
             return True
 
-        # group_only == True → user must be in a group
-        return UserGroup.objects.filter(user=request.user).exists()
+        # group_only == True → user must be in a group of minimum 2
+        min_members = 2
+        ug = UserGroup.objects.select_related("group").filter(user=request.user).first()
+
+        if not ug:
+            return False
+
+        return ug.group.members.count() >= min_members
 
 
 class ChallengeDetailSerializer(serializers.ModelSerializer):
@@ -154,6 +161,7 @@ class ChallengeDetailSerializer(serializers.ModelSerializer):
             "difficulty",
             "solution_type",
             "active_contest",
+            "group_only",
         ]
 
     def get_active_contest(self, obj):
@@ -237,6 +245,7 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             "difficulty",
             "solution_type",
             "uploaded_files",
+            "group_only",
             # contest fields (write-only)
             "contest_name",
             "contest_slug",
@@ -370,6 +379,13 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
         qtype = validated_data.get("question_type") or "practice"
         validated_data["question_type"] = qtype
+        group_only = validated_data.pop("group_only", None)
+
+        if group_only is not None:
+            if isinstance(group_only, str):
+                group_only = group_only.lower() == "true"
+
+            validated_data["group_only"] = group_only
 
         # 1) Create challenge
         challenge = super().create(validated_data)
@@ -419,6 +435,14 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
                 contest_end_time,
             ]
         )
+
+        group_only = validated_data.pop("group_only", None)
+
+        if group_only is not None:
+            if isinstance(group_only, str):
+                group_only = group_only.lower() == "true"
+
+            validated_data["group_only"] = group_only
 
         # 1) Update challenge fields
         challenge = super().update(instance, validated_data)
