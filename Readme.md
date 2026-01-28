@@ -7,6 +7,8 @@ It’s built with **Django + Django REST Framework**, using **PostgreSQL** as th
 ##  Installation and Setup
 
 Follow the steps below to install dependencies and run the project in your local environment.
+Default username : admin
+Default password : password
 
 ---
 
@@ -88,4 +90,5 @@ Swagger api documentation :
 ```
 http://localhost:8000/swagger/
 ```
+
 
