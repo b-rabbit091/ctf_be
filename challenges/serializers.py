@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import serializers
 
+from submissions.models import UserFlagSubmission, UserTextSubmission
 from users.models import UserGroup
 
 from .models import (
@@ -37,6 +38,8 @@ class SolutionTypeSerializer(serializers.ModelSerializer):
 
 
 class ContestSerializer(serializers.ModelSerializer):
+    challenges = serializers.PrimaryKeyRelatedField(many=True, queryset=Challenge.objects.all(), required=False)
+
     class Meta:
         model = Contest
         fields = [
@@ -47,7 +50,16 @@ class ContestSerializer(serializers.ModelSerializer):
             "contest_type",
             "start_time",
             "end_time",
+            "is_active",
+            "publish_result",
+            "challenges",
         ]
+
+
+class ContestCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Contest
+        fields = ["name", "slug", "description", "contest_type", "start_time", "end_time", "is_active", "publish_result"]
 
 
 class ChallengeFileSerializer(serializers.ModelSerializer):
@@ -73,21 +85,11 @@ class ChallengeListSerializer(serializers.ModelSerializer):
     difficulty = DifficultySerializer(read_only=True)
     active_contest = serializers.SerializerMethodField()
     can_participate = serializers.SerializerMethodField()
+    user_submission_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Challenge
-        fields = [
-            "id",
-            "title",
-            "description",
-            "category",
-            "difficulty",
-            "question_type",
-            "active_contest",
-            "group_only",
-            "can_participate",
-            "group_only",
-        ]
+        fields = ["id", "title", "description", "category", "difficulty", "question_type", "active_contest", "group_only", "can_participate", "group_only", "user_submission_status"]
 
     def get_active_contest(self, obj):
         now = timezone.now()
@@ -135,6 +137,77 @@ class ChallengeListSerializer(serializers.ModelSerializer):
             return False
 
         return ug.group.members.count() >= min_members
+
+    def get_user_submission_status(self, obj):
+        """
+        Returns one of:
+          - "solved"
+          - "partially_solved"
+          - "attempted"
+          - "not_attempted"
+        Rules you asked:
+          - flag solved => solved
+          - procedure solved => solved
+          - flag_and_procedure with only one solved => partially_solved
+          - if there are wrong answers on anything => attempted
+        """
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return "not_attempted"
+
+        user = request.user
+
+        # decide which contest context to use:
+        # - if an active contest exists, evaluate submissions inside it
+        # - else evaluate practice submissions (contest is NULL)
+
+        # Your solution_type naming may differ; normalize to a string key
+        st = ""
+        if getattr(obj, "solution_type", None):
+            st = getattr(obj.solution_type, "key", None) or getattr(obj.solution_type, "slug", None) or getattr(obj.solution_type, "name", "") or ""
+        st = str(st).strip().lower()
+
+        needs_flag = st in {"flag", "flag_and_procedure", "flag_and_procedure"}  # ok if duplicated
+        needs_text = st in {"procedure", "flag_and_procedure"}
+
+        # pull submissions
+        flag_qs = UserFlagSubmission.objects.filter(user=user, challenge=obj)
+        text_qs = UserTextSubmission.objects.filter(user=user, challenge=obj)
+
+        # detect any activity
+        any_attempt = flag_qs.exists() or text_qs.exists()
+        if not any_attempt:
+            return "not_attempted"
+
+        # solved flags/text: status.status == "solved"
+        flag_solved = flag_qs.filter(status__status__iexact="correct").exists()
+        text_solved = text_qs.filter(status__status__iexact="correct").exists()
+
+        # "wrong answers on anything => attempted"
+        # treat ANY non-solved submission as "wrong/attempted"
+        flag_wrong = flag_qs.exclude(status__status__iexact="correct").exists()
+        text_wrong = text_qs.exclude(status__status__iexact="correct").exists()
+        if flag_wrong or text_wrong:
+            return "attempted"
+
+        # no wrong attempts exist beyond this point
+        if needs_flag and needs_text:
+            if flag_solved and text_solved:
+                return "solved"
+            if flag_solved or text_solved:
+                return "partially_solved"
+            return "attempted"
+
+        if needs_flag:
+            return "solved" if flag_solved else "attempted"
+
+        if needs_text:
+            return "solved" if text_solved else "attempted"
+
+        # fallback (if solution_type is missing/unknown)
+        if flag_solved or text_solved:
+            return "solved"
+        return "attempted"
 
 
 class ChallengeDetailSerializer(serializers.ModelSerializer):

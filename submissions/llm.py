@@ -27,6 +27,7 @@ class ScoreAnalyser:
     reply: str
     score: int
     max_score: int
+    status: str
 
 
 def build_messages(
@@ -88,12 +89,14 @@ def build_messages(
         "YOUR TASK:\n"
         "- Compare user_solution to exact_solution internally.\n"
         f"- Produce an integer score from 0 to max_score inclusive (max_score={ms}). min_score is always 0.\n"
+        f"- Give the status of answer with correct answer , the options are correct, incorrect.\n"
         "- Be strictly unforgiving of near-misses and partially correct approaches, and never award credit beyond what is fully justified.”\n"
         "- Stay strictly within the current challenge context.\n\n"
         "OUTPUT FORMAT (MANDATORY):\n"
         "- Output ONLY valid JSON, no markdown, no extra text.\n"
-        f'- Schema: {{"reply":"...","score":<0-{ms}>,"max_score":{ms}}}\n'
+        f'- Schema: {{"reply":"...","score":<0-{ms}>,"max_score":{ms},"status":"..."}}\n'
         "- score must be an integer and must be clamped to [0, max_score].\n"
+        "- status must be an str and options are correct , incorrect.\n"
     )
 
     context = {
@@ -180,14 +183,11 @@ def call_coach_llm(
 
             obj = safe_extract_json_from_text(raw_text)
             if not isinstance(obj, dict):
-                return ScoreAnalyser(
-                    reply="I couldn’t format the evaluation properly. Please try again.",
-                    score=0,
-                    max_score=ms,
-                )
+                return ScoreAnalyser(reply="I couldn’t format the evaluation properly. Please try again.", score=0, max_score=ms, status="pending")
 
             reply = str(obj.get("reply") or "").strip()
             score = _clamp_score(obj.get("score"), ms)
+            status = str(obj.get("status") or "").strip()
 
             # If the model tried to change max_score, ignore it and enforce ours
             # (still include it in the output object we return).
@@ -196,7 +196,7 @@ def call_coach_llm(
             if len(reply) > 2000:
                 reply = reply[:2000].rstrip() + "…"
 
-            return ScoreAnalyser(reply=reply, score=score, max_score=ms)
+            return ScoreAnalyser(reply=reply, score=score, max_score=ms, status=status)
 
         except LLMTransientError as e:
             last_err = getattr(e, "code", None) or "transient"

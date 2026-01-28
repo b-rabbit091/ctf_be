@@ -229,17 +229,22 @@ class LeaderboardViewSet(viewsets.GenericViewSet):
         return Response({"error": msg}, status=code)
 
     def _build_rows(self, lb_type, contest, search):
-        solved_filter = {
-            "challenge__question_type": lb_type,
-            "status__status__iexact": "solved",
-        }
-        if lb_type == "practice":
-            solved_filter["contest__isnull"] = True
-        else:
-            solved_filter["contest"] = contest
+        """
+        Same return format as your original code.
+        Change: leaderboard is based on BEST user_score per (user, challenge),
+        across BOTH flag + text submissions, NOT on submission_status="solved".
+        """
 
-        flag_rows = self._best_scores(UserFlagSubmission.objects.filter(**solved_filter))
-        text_rows = self._best_scores(UserTextSubmission.objects.filter(**solved_filter))
+        base_filter = {"challenge__question_type": lb_type}
+
+        # Practice submissions: contest is NULL
+        if lb_type == "practice":
+            base_filter["contest__isnull"] = True
+        else:
+            base_filter["contest"] = contest
+
+        flag_rows = self._best_scores(UserFlagSubmission.objects.filter(**base_filter))
+        text_rows = self._best_scores(UserTextSubmission.objects.filter(**base_filter))
 
         best = defaultdict(dict)  # user_id -> {challenge_id: best_score}
 
@@ -270,6 +275,7 @@ class LeaderboardViewSet(viewsets.GenericViewSet):
         return rows
 
     def _best_scores(self, qs):
+        # best score per user per challenge (score-based, no status filter)
         return qs.values("user_id", "challenge_id").annotate(best_score=Max("user_score"))
 
 

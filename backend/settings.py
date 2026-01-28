@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     "drf_yasg",
     "corsheaders",
 ]
+INSTALLED_APPS += ["django_filters"]
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
@@ -136,6 +137,7 @@ DEFAULT_FROM_EMAIL = os.getenv("EMAIL_HOST_USER")
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
     "DEFAULT_THROTTLE_RATES": {
         "chat_practice": "30/min",  # tune as you like
     },

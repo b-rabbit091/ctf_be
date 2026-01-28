@@ -6,6 +6,8 @@ from challenges.utils import challenge_file_upload_path
 
 User = get_user_model()
 
+app = "challenges"
+
 
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
@@ -48,6 +50,7 @@ class ChallengeScore(models.Model):
 
 class Challenge(models.Model):
     QUESTION_TYPE_CHOICES = (
+        ("N/A", "Not Assigned"),
         ("practice", "Practice"),
         ("competition", "Competition"),
     )
@@ -61,7 +64,7 @@ class Challenge(models.Model):
     output_format = models.TextField(blank=True, null=True)
     sample_input = models.TextField(blank=True, null=True)
     sample_output = models.TextField(blank=True, null=True)
-    question_type = models.CharField(max_length=20, choices=QUESTION_TYPE_CHOICES, default="practice")
+    question_type = models.CharField(max_length=20, null=True, choices=QUESTION_TYPE_CHOICES, default="practice")
     solution_type = models.ForeignKey(SolutionType, default=3, on_delete=models.SET_NULL, null=True, blank=True)
     challenge_score = models.ForeignKey(ChallengeScore, null=True, blank=True, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)

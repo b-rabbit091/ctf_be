@@ -4,6 +4,8 @@ from django.utils.text import slugify
 
 User = get_user_model()
 
+app = "blogs"
+
 
 class Blog(models.Model):
     title = models.CharField(max_length=255)

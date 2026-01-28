@@ -337,15 +337,12 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
     def _get_status_for_result(self, is_correct: bool) -> SubmissionStatus:
         if is_correct:
             status_value = "correct"
-            desc = "User submitted a correct solution."
-        else:
+        elif is_correct == "incorrect":
             status_value = "incorrect"
-            desc = "User submitted an incorrect solution."
+        else:
+            status_value = "pending"
 
-        status_obj, _ = SubmissionStatus.objects.get_or_create(
-            status=status_value,
-            defaults={"description": desc},
-        )
+        status_obj = SubmissionStatus.objects.get(status=status_value)
         return status_obj
 
     def _get_contest_for_challenge(self, challenge: Challenge):
@@ -428,7 +425,6 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
         if "content" in validated_data:
             content = validated_data["content"]
             is_correct = self._check_procedure_correct(challenge, content)
-            status_obj = self._get_status_for_result(is_correct)
             text_solution = SolutionUtils.get_text_solution_for_challenge(challenge)
             procedure_score = challenge.challenge_score.procedure_score
             if not procedure_score:
@@ -455,6 +451,9 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
                     user_score = 0
             except Exception:
                 user_score = 0
+
+            user_submission_status = getattr(score_analyser, "status", None)
+            status_obj = self._get_status_for_result(user_submission_status)
 
             try:
                 obj = UserTextSubmission.objects.create(

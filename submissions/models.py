@@ -3,6 +3,8 @@ from django.db import models
 
 from users.models import Group
 
+app = "submissions"
+
 
 class SubmissionStatus(models.Model):
     status = models.CharField(max_length=255, default="solved", help_text="Name of the status")

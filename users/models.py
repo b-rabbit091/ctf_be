@@ -7,6 +7,8 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
 
+app = "users"
+
 
 class Role(models.Model):
     name = models.CharField(max_length=50, unique=True)
