@@ -70,7 +70,6 @@ class Challenge(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    group_only = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.title} ({self.question_type})"
@@ -143,6 +142,7 @@ class Contest(models.Model):
 
     is_active = models.BooleanField(default=True)
     publish_result = models.BooleanField(default=False)
+    group_only = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

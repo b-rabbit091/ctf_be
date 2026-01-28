@@ -58,11 +58,13 @@ class BaseSubmissionSerializer(serializers.ModelSerializer):
 
             # Ensure challenge is part of this contest
             if not contest.challenges.filter(pk=challenge.pk).exists():
-                raise serializers.ValidationError({"contest_id": "This challenge is not part of the specified contest."})
+                raise serializers.ValidationError(
+                    {"contest_id": "This challenge is not part of the specified contest."})
 
             # Enforce time window for competition submissions
             if not (contest.start_time <= now <= contest.end_time):
-                raise serializers.ValidationError({"contest_id": "This contest is not accepting submissions at this time."})
+                raise serializers.ValidationError(
+                    {"contest_id": "This contest is not accepting submissions at this time."})
 
         return challenge, contest
 
@@ -408,7 +410,8 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
             if is_correct:
                 user_score = flag_score
 
-            obj = UserFlagSubmission.objects.create(user=user, challenge=challenge, contest=contest, value=value, status=status_obj, user_score=user_score)
+            obj = UserFlagSubmission.objects.create(user=user, challenge=challenge, contest=contest, value=value,
+                                                    status=status_obj, user_score=user_score)
 
             response["results"].append(
                 {
@@ -470,8 +473,8 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
             response["results"].append(
                 {
                     "type": "procedure",
-                    "correct": is_correct,
-                    "status": obj.status.status,
+                    "correct": user_submission_status,
+                    "status": status_obj,
                     "submitted_at": obj.submitted_at,
                     "submitted_content": content,
                     "user_score": user_score,
@@ -498,7 +501,7 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
         if not challenge:
             raise serializers.ValidationError("Challenge context missing.")
 
-        if not challenge.group_only:
+        if not challenge.contests.filter(group_only=True).exists():
             raise PermissionDenied("This challenge is not a group-only challenge.")
 
         try:
@@ -529,12 +532,14 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
         return attrs
 
     def _get_status_for_result(self, is_correct: bool) -> SubmissionStatus:
-        status_value = "correct" if is_correct else "incorrect"
-        desc = "Group submitted a correct solution." if is_correct else "Group submitted an incorrect solution."
-        status_obj, _ = SubmissionStatus.objects.get_or_create(
-            status=status_value,
-            defaults={"description": desc},
-        )
+        if is_correct:
+            status_value = "correct"
+        elif is_correct == "incorrect":
+            status_value = "incorrect"
+        else:
+            status_value = "pending"
+
+        status_obj = SubmissionStatus.objects.get(status=status_value)
         return status_obj
 
     def _get_contest_for_challenge(self, challenge: Challenge):
@@ -615,13 +620,10 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
         # PROCEDURE
         if "content" in validated_data:
             content = validated_data["content"]
-            is_correct = self._check_procedure_correct(challenge, content)
-            status_obj = self._get_status_for_result(is_correct)
 
             procedure_score = getattr(challenge.challenge_score, "procedure_score", 0) or 0
 
             score_analyser = None
-            exact_val = None
             try:
                 text_solution = SolutionUtils.get_text_solution_for_challenge(challenge)
                 exact_val = text_solution.get("value", None) if isinstance(text_solution, dict) else None
@@ -642,8 +644,11 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
             try:
                 group_score = getattr(score_analyser, "score", None)
                 group_score = int(group_score) if group_score is not None else 0
+
             except Exception:
                 group_score = 0
+            user_submission_status = getattr(score_analyser, "status", None)
+            status_obj = self._get_status_for_result(user_submission_status)
 
             obj = GroupTextSubmission.objects.create(
                 group=group,

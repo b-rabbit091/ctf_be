@@ -14,7 +14,7 @@ from .models import (
     ChallengeFile,
     Contest,
     Difficulty,
-    SolutionType,
+    SolutionType, ChallengeScore,
 )
 from .utils import validate_uploaded_file
 
@@ -50,16 +50,17 @@ class ContestSerializer(serializers.ModelSerializer):
             "contest_type",
             "start_time",
             "end_time",
-            "is_active",
             "publish_result",
             "challenges",
+            "group_only"
         ]
 
 
 class ContestCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Contest
-        fields = ["name", "slug", "description", "contest_type", "start_time", "end_time", "is_active", "publish_result"]
+        fields = ["name", "slug", "description", "contest_type", "start_time", "end_time", "publish_result",
+                  "group_only"]
 
 
 class ChallengeFileSerializer(serializers.ModelSerializer):
@@ -89,7 +90,8 @@ class ChallengeListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Challenge
-        fields = ["id", "title", "description", "category", "difficulty", "question_type", "active_contest", "group_only", "can_participate", "group_only", "user_submission_status"]
+        fields = ["id", "title", "description", "category", "difficulty", "question_type", "active_contest",
+                  "can_participate", "user_submission_status"]
 
     def get_active_contest(self, obj):
         now = timezone.now()
@@ -126,7 +128,7 @@ class ChallengeListSerializer(serializers.ModelSerializer):
             return False
 
         # If challenge is not group-only → everyone can participate
-        if not obj.group_only:
+        if obj.contests.filter(group_only=False).exists():
             return True
 
         # group_only == True → user must be in a group of minimum 2
@@ -164,7 +166,8 @@ class ChallengeListSerializer(serializers.ModelSerializer):
         # Your solution_type naming may differ; normalize to a string key
         st = ""
         if getattr(obj, "solution_type", None):
-            st = getattr(obj.solution_type, "key", None) or getattr(obj.solution_type, "slug", None) or getattr(obj.solution_type, "name", "") or ""
+            st = getattr(obj.solution_type, "key", None) or getattr(obj.solution_type, "slug", None) or getattr(
+                obj.solution_type, "name", "") or ""
         st = str(st).strip().lower()
 
         needs_flag = st in {"flag", "flag_and_procedure", "flag_and_procedure"}  # ok if duplicated
@@ -234,7 +237,6 @@ class ChallengeDetailSerializer(serializers.ModelSerializer):
             "difficulty",
             "solution_type",
             "active_contest",
-            "group_only",
         ]
 
     def get_active_contest(self, obj):
@@ -274,7 +276,8 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
     # FK fields as PKs
     category = serializers.PrimaryKeyRelatedField(queryset=Category.objects.all(), required=False, allow_null=True)
     difficulty = serializers.PrimaryKeyRelatedField(queryset=Difficulty.objects.all(), required=False, allow_null=True)
-    solution_type = serializers.PrimaryKeyRelatedField(queryset=SolutionType.objects.all(), required=False, allow_null=True)
+    solution_type = serializers.PrimaryKeyRelatedField(queryset=SolutionType.objects.all(), required=False,
+                                                       allow_null=True)
 
     # practice / competition
     question_type = serializers.ChoiceField(
@@ -303,6 +306,9 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
     contest_end_time = serializers.DateTimeField(write_only=True, required=False)
     active_contest = serializers.SerializerMethodField()
 
+    flag_score = serializers.IntegerField(write_only=True, required=False, min_value=0)
+    procedure_score = serializers.IntegerField(write_only=True, required=False, min_value=0)
+
     class Meta:
         model = Challenge
         fields = [
@@ -318,7 +324,6 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             "difficulty",
             "solution_type",
             "uploaded_files",
-            "group_only",
             # contest fields (write-only)
             "contest_name",
             "contest_slug",
@@ -327,6 +332,9 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             "contest_start_time",
             "contest_end_time",
             "active_contest",
+            "flag_score",
+            "procedure_score",
+
         ]
 
     def get_active_contest(self, obj):
@@ -387,7 +395,8 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
         # 1) PRACTICE: contest fields should NOT be sent
         if ((qtype or attrs.get("question_type")) == "practice") and any_contest_field:
-            raise serializers.ValidationError({"contest": "Contest fields are only allowed for competition challenges."})
+            raise serializers.ValidationError(
+                {"contest": "Contest fields are only allowed for competition challenges."})
 
         # 2) COMPETITION: if contest data is provided, validate it
         if (qtype == "competition") and any_contest_field and not instance:
@@ -396,23 +405,28 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             end = contest_fields.get("contest_end_time")
 
             if not name:
-                raise serializers.ValidationError({"contest_name": "Contest name is required for competition challenges."})
+                raise serializers.ValidationError(
+                    {"contest_name": "Contest name is required for competition challenges."})
             if not start or not end:
-                raise serializers.ValidationError({"contest_time": "Both contest_start_time and contest_end_time are required."})
+                raise serializers.ValidationError(
+                    {"contest_time": "Both contest_start_time and contest_end_time are required."})
             if end <= start:
-                raise serializers.ValidationError({"contest_time": "contest_end_time must be after contest_start_time."})
+                raise serializers.ValidationError(
+                    {"contest_time": "contest_end_time must be after contest_start_time."})
 
             # Slug: generate if empty
             slug = contest_fields.get("contest_slug") or slugify(name)
             if Contest.objects.filter(slug=slug).exists():
-                raise serializers.ValidationError({"contest_slug": "Contest slug already exists. Please choose another one."})
+                raise serializers.ValidationError(
+                    {"contest_slug": "Contest slug already exists. Please choose another one."})
             attrs["contest_slug"] = slug
 
         # 3) Prevent changing question_type on challenges already in contests
         if instance and "question_type" in attrs:
             new_qtype = attrs["question_type"]
             if new_qtype != instance.question_type and instance.contests.exists():
-                raise serializers.ValidationError({"question_type": "Cannot change question_type for a challenge already used in contests."})
+                raise serializers.ValidationError(
+                    {"question_type": "Cannot change question_type for a challenge already used in contests."})
 
         return attrs
 
@@ -449,16 +463,20 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
         contest_type = validated_data.pop("contest_type", "custom")
         contest_start_time = validated_data.pop("contest_start_time", None)
         contest_end_time = validated_data.pop("contest_end_time", None)
+        flag_score = validated_data.pop("flag_score", None)
+        procedure_score = validated_data.pop("procedure_score", None)
 
         qtype = validated_data.get("question_type") or "practice"
         validated_data["question_type"] = qtype
-        group_only = validated_data.pop("group_only", None)
 
-        if group_only is not None:
-            if isinstance(group_only, str):
-                group_only = group_only.lower() == "true"
 
-            validated_data["group_only"] = group_only
+        # If scores were provided, create ChallengeScore and attach it
+        if flag_score is not None or procedure_score is not None:
+            score_obj = ChallengeScore.objects.create(
+                flag_score=flag_score or 0,
+                procedure_score=procedure_score or 0,
+            )
+            validated_data["challenge_score"] = score_obj
 
         # 1) Create challenge
         challenge = super().create(validated_data)
@@ -496,6 +514,8 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
         contest_type = validated_data.pop("contest_type", None)
         contest_start_time = validated_data.pop("contest_start_time", None)
         contest_end_time = validated_data.pop("contest_end_time", None)
+        flag_score = validated_data.pop("flag_score", None)
+        procedure_score = validated_data.pop("procedure_score", None)
 
         any_contest_field = any(
             v is not None and v != ""
@@ -509,16 +529,25 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             ]
         )
 
-        group_only = validated_data.pop("group_only", None)
-
-        if group_only is not None:
-            if isinstance(group_only, str):
-                group_only = group_only.lower() == "true"
-
-            validated_data["group_only"] = group_only
-
         # 1) Update challenge fields
         challenge = super().update(instance, validated_data)
+
+        # Update or create ChallengeScore if scores were provided
+        if flag_score is not None or procedure_score is not None:
+            score_obj = challenge.challenge_score
+            if score_obj is None:
+                score_obj = ChallengeScore.objects.create(
+                    flag_score=flag_score or 0,
+                    procedure_score=procedure_score or 0,
+                )
+                challenge.challenge_score = score_obj
+                challenge.save(update_fields=["challenge_score"])
+            else:
+                if flag_score is not None:
+                    score_obj.flag_score = flag_score
+                if procedure_score is not None:
+                    score_obj.procedure_score = procedure_score
+                score_obj.save()
 
         # 2) Update contest (only if competition + contest data was provided)
         if challenge.question_type == "competition" and any_contest_field:
@@ -533,7 +562,8 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
                 new_start = contest_start_time if contest_start_time is not None else contest.start_time
                 new_end = contest_end_time if contest_end_time is not None else contest.end_time
                 if new_end <= new_start:
-                    raise serializers.ValidationError({"contest_time": "contest_end_time must be after contest_start_time."})
+                    raise serializers.ValidationError(
+                        {"contest_time": "contest_end_time must be after contest_start_time."})
                 contest.start_time = new_start
                 contest.end_time = new_end
 
@@ -550,7 +580,8 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
             if new_slug and new_slug != contest.slug:
                 if Contest.objects.filter(slug=new_slug).exclude(pk=contest.pk).exists():
-                    raise serializers.ValidationError({"contest_slug": "Contest slug already exists. Please choose another one."})
+                    raise serializers.ValidationError(
+                        {"contest_slug": "Contest slug already exists. Please choose another one."})
                 contest.slug = new_slug
 
             # Apply other fields only if provided

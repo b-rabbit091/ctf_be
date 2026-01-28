@@ -122,8 +122,7 @@ class PreviousSubmissionsAPIView(APIView):
         except Challenge.DoesNotExist:
             raise NotFound("Challenge not found")
 
-        # GROUP-ONLY: show only submissions made by the user's own group
-        if challenge.group_only:
+        if challenge.contests.filter(group_only=True).exists():
             try:
                 membership = user.group_membership  # related_name='group_membership'
             except UserGroup.DoesNotExist:
