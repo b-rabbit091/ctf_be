@@ -14,7 +14,9 @@ from .models import (
     ChallengeFile,
     Contest,
     Difficulty,
+    FlagSolution,
     SolutionType, ChallengeScore,
+    TextSolution,
 )
 from .utils import validate_uploaded_file
 
@@ -306,8 +308,11 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
     contest_end_time = serializers.DateTimeField(write_only=True, required=False)
     active_contest = serializers.SerializerMethodField()
 
-    flag_score = serializers.IntegerField(write_only=True, required=False, min_value=0)
-    procedure_score = serializers.IntegerField(write_only=True, required=False, min_value=0)
+    flag_score = serializers.IntegerField(write_only=True, required=True, min_value=0)
+    procedure_score = serializers.IntegerField(write_only=True, required=True, min_value=0)
+    flagSolution = serializers.CharField(write_only=True, required=True, allow_blank=True)
+    procedureSolution = serializers.CharField(write_only=True, required=True, allow_blank=True)
+
 
     class Meta:
         model = Challenge
@@ -334,6 +339,8 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             "active_contest",
             "flag_score",
             "procedure_score",
+            "flagSolution",
+            "procedureSolution",
 
         ]
 
@@ -468,6 +475,9 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
         qtype = validated_data.get("question_type") or "practice"
         validated_data["question_type"] = qtype
+        flag_solution = validated_data.pop("flagSolution", None)
+        procedure_solution = validated_data.pop("procedureSolution", None)
+
 
 
         # If scores were provided, create ChallengeScore and attach it
@@ -480,6 +490,20 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
         # 1) Create challenge
         challenge = super().create(validated_data)
+        # ----- Save FlagSolution -----
+        if flag_solution:
+            flag_obj, _ = FlagSolution.objects.get_or_create(
+                value=flag_solution
+            )
+            flag_obj.challenges.add(challenge)
+
+        # ----- Save TextSolution -----
+        if procedure_solution:
+            text_obj = TextSolution.objects.create(
+                content=procedure_solution
+            )
+            text_obj.challenges.add(challenge)
+
 
         # 2) Create contest ONLY for competition + when contest data exists
         if qtype == "competition" and contest_name and contest_start_time and contest_end_time:
@@ -514,8 +538,11 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
         contest_type = validated_data.pop("contest_type", None)
         contest_start_time = validated_data.pop("contest_start_time", None)
         contest_end_time = validated_data.pop("contest_end_time", None)
-        flag_score = validated_data.pop("flag_score", None)
-        procedure_score = validated_data.pop("procedure_score", None)
+        flag_score = validated_data.pop("flag_score", 0)
+        procedure_score = validated_data.pop("procedure_score", 0)
+        flag_solution = validated_data.pop("flagSolution", None)
+        procedure_solution = validated_data.pop("procedureSolution", None)
+
 
         any_contest_field = any(
             v is not None and v != ""
@@ -531,6 +558,20 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
         # 1) Update challenge fields
         challenge = super().update(instance, validated_data)
+        # ----- Save FlagSolution -----
+        if flag_solution:
+            flag_obj, _ = FlagSolution.objects.get_or_create(
+                value=flag_solution
+            )
+            flag_obj.challenges.add(challenge)
+
+        # ----- Save TextSolution -----
+        if procedure_solution:
+            text_obj = TextSolution.objects.create(
+                content=procedure_solution
+            )
+            text_obj.challenges.add(challenge)
+
 
         # Update or create ChallengeScore if scores were provided
         if flag_score is not None or procedure_score is not None:

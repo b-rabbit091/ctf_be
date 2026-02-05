@@ -339,10 +339,8 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
     def _get_status_for_result(self, is_correct: bool) -> SubmissionStatus:
         if is_correct:
             status_value = "correct"
-        elif is_correct == "incorrect":
-            status_value = "incorrect"
         else:
-            status_value = "pending"
+            status_value = "incorrect"
 
         status_obj = SubmissionStatus.objects.get(status=status_value)
         return status_obj
@@ -531,16 +529,16 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
 
         return attrs
 
-    def _get_status_for_result(self, is_correct: bool) -> SubmissionStatus:
-        if is_correct:
+    def _get_status_for_result(self, is_correct):
+        if is_correct is True:
             status_value = "correct"
-        elif is_correct == "incorrect":
+        elif is_correct is False:
             status_value = "incorrect"
         else:
             status_value = "pending"
 
-        status_obj = SubmissionStatus.objects.get(status=status_value)
-        return status_obj
+        return SubmissionStatus.objects.get(status=status_value)
+
 
     def _get_contest_for_challenge(self, challenge: Challenge):
         if challenge.question_type != "competition":
@@ -647,8 +645,9 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
 
             except Exception:
                 group_score = 0
-            user_submission_status = getattr(score_analyser, "status", None)
-            status_obj = self._get_status_for_result(user_submission_status)
+                user_submission_status = None  # manual / async review
+                status_obj = self._get_status_for_result(None)
+
 
             obj = GroupTextSubmission.objects.create(
                 group=group,
