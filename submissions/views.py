@@ -163,11 +163,11 @@ class ChallengeSubmissionViewSet(viewsets.ViewSet):
     def create(self, request, pk=None):
         try:
             challenge = Challenge.objects.select_related("solution_type").get(pk=pk)
+            group_only = challenge.contests.filter(group_only=True).exists()
         except Challenge.DoesNotExist:
             raise NotFound("Challenge not found.")
 
-        # Pick the right serializer based on challenge.group_only
-        serializer_class = GroupChallengeSubmissionSerializer if getattr(challenge, "group_only", False) else ChallengeSubmissionSerializer
+        serializer_class = GroupChallengeSubmissionSerializer if group_only else ChallengeSubmissionSerializer
 
         serializer = serializer_class(
             data=request.data,
@@ -359,7 +359,7 @@ class ReportViewSet(viewsets.ViewSet):
                     "id": challenge.id,
                     "title": challenge.title,
                     "solution_type": sol_label,
-                    "group_only": bool(challenge.group_only),
+                    "group_only": challenge.contests.filter(group_only=True).exists(),
                 },
                 "count": len(rows),
                 "rows": rows,
@@ -379,7 +379,7 @@ class ReportViewSet(viewsets.ViewSet):
         dt_to: Optional[timezone.datetime],
         correct_solution: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
-        if challenge.group_only:
+        if challenge.contests.filter(group_only=True).exists():
             return self._build_group_rows(
                 challenge=challenge,
                 sol_label=sol_label,

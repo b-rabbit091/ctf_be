@@ -7,3 +7,5 @@ venv
 *.code-workspace
 *.sublime-project
 *.sublime-workspace
+__pycache__/
+*.py[cod]
