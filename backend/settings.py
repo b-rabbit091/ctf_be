@@ -21,10 +21,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 BASE_URL = "https://ctffetest.vercel.app"
 
 
-MEDIA_URL = "/media/"
+MEDIA_URL = "/ctf/media/"
 MEDIA_ROOT = os.getenv("MEDIA_ROOT", str(BASE_DIR / "media"))
 
-STATIC_URL = "/static/"
+STATIC_URL = "/ctf/static/"
 STATIC_ROOT = os.getenv("STATIC_ROOT", str(BASE_DIR / "staticfiles"))
 
 
@@ -38,12 +38,16 @@ DEFAULT_FILE_STORAGE = os.getenv(
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-^p#-z7db627h5ry-(3ip8ea#d0!*8xz&ng(0x)z3zdp1izu#)z"
+SECRET_KEY = os.getenv("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG')
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = os.getenv(
+    "DJANGO_ALLOWED_HOSTS",
+    "cite8.nwmissouri.edu"
+).split(",")
+
 
 # Application definition
 
@@ -77,7 +81,15 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
+
+CORS_ALLOWED_ORIGINS = [
+    "https://cite8.nwmissouri.edu",
+]
+CSRF_TRUSTED_ORIGINS = [
+    "https://cite8.nwmissouri.edu",
+]
+
 ROOT_URLCONF = "backend.urls"
 AUTH_USER_MODEL = "users.User"
 
@@ -186,9 +198,6 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
-
-STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
