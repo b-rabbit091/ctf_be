@@ -18,7 +18,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # BASE_URL = "http://localhost"
-BASE_URL = "https://ctffetest.vercel.app"
+BASE_URL = "https://cite8.nwmissouri.edu/ctf"
 
 
 MEDIA_URL = "/ctf/media/"
