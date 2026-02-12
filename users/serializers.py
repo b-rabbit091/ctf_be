@@ -34,6 +34,41 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # add identifier (email or username) as an input field
+        self.fields["identifier"] = serializers.CharField()
+        # remove the default username field so API only shows identifier + password
+        if self.username_field in self.fields:
+            self.fields.pop(self.username_field)
+
+    def validate(self, attrs):
+        identifier = attrs.get("identifier")
+        password = attrs.get("password")
+
+        user = (
+            User.objects.filter(username__iexact=identifier).first()
+            or User.objects.filter(email__iexact=identifier).first()
+        )
+
+        if not user or not user.check_password(password):
+            raise serializers.ValidationError("No active account found with the given credentials")
+
+        if not user.is_active:
+            raise serializers.ValidationError("User account is disabled")
+
+        self.user = user
+
+        data = super().validate({self.username_field: user.get_username(), "password": password})
+
+        data["role"] = user.role.name if getattr(user, "role", None) else None
+        data["username"] = user.username
+        data["email"] = user.email
+        return data
+
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
