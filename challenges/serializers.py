@@ -221,6 +221,9 @@ class ChallengeDetailSerializer(serializers.ModelSerializer):
     solution_type = SolutionTypeSerializer()
     files = ChallengeFileSerializer(many=True, read_only=True)
     active_contest = serializers.SerializerMethodField()
+    challenge_score = serializers.SerializerMethodField()
+    flag_solutions = serializers.SerializerMethodField()
+    text_solutions = serializers.SerializerMethodField()
 
     class Meta:
         model = Challenge
@@ -239,7 +242,16 @@ class ChallengeDetailSerializer(serializers.ModelSerializer):
             "difficulty",
             "solution_type",
             "active_contest",
+            "challenge_score",
+            "flag_solutions",
+            "text_solutions",
         ]
+
+    def _is_admin(self) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return bool(user and user.is_authenticated and user.is_admin)
+
 
     def get_active_contest(self, obj):
         """
@@ -264,6 +276,26 @@ class ChallengeDetailSerializer(serializers.ModelSerializer):
             return None
 
         return ContestSerializer(contest).data
+
+    def get_challenge_score(self, obj):
+        if not self._is_admin():
+            return None
+        if not obj.challenge_score:
+            return None
+        return {
+            "flag_score": obj.challenge_score.flag_score,
+            "procedure_score": obj.challenge_score.procedure_score,
+        }
+
+    def get_flag_solutions(self, obj):
+        if not self._is_admin():
+            return []
+        return list(obj.flag_solutions.values("id", "value"))
+
+    def get_text_solutions(self, obj):
+        if not self._is_admin():
+            return []
+        return list(obj.text_solutions.values("id", "content"))
 
 
 class ChallengeUpdateSerializer(serializers.ModelSerializer):
