@@ -221,6 +221,10 @@ class ChallengeDetailSerializer(serializers.ModelSerializer):
     solution_type = SolutionTypeSerializer()
     files = ChallengeFileSerializer(many=True, read_only=True)
     active_contest = serializers.SerializerMethodField()
+    flag_solution = serializers.SerializerMethodField()   
+    procedure_solution = serializers.SerializerMethodField()
+    flag_score = serializers.SerializerMethodField()    
+    procedure_score = serializers.SerializerMethodField()
 
     class Meta:
         model = Challenge
@@ -239,8 +243,26 @@ class ChallengeDetailSerializer(serializers.ModelSerializer):
             "difficulty",
             "solution_type",
             "active_contest",
+            "flag_solution",       
+            "procedure_solution",
+            "flag_score",          
+            "procedure_score",
         ]
+        
+    def get_flag_solution(self, obj):
+        flag = FlagSolution.objects.filter(challenges=obj).first()
+        return flag.value if flag else ""
 
+    def get_procedure_solution(self, obj):
+        text = TextSolution.objects.filter(challenges=obj).first()
+        return text.content if text else ""    
+    
+    def get_flag_score(self, obj):
+        return obj.challenge_score.flag_score if obj.challenge_score else 0
+
+    def get_procedure_score(self, obj):
+        return obj.challenge_score.procedure_score if obj.challenge_score else 0
+    
     def get_active_contest(self, obj):
         """
         Returns the currently running contest for this challenge if any.
@@ -559,20 +581,24 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
         # 1) Update challenge fields
         challenge = super().update(instance, validated_data)
         # ----- Save FlagSolution -----
-        if flag_solution:
-            flag_obj, _ = FlagSolution.objects.get_or_create(
-                value=flag_solution
-            )
-            flag_obj.challenges.add(challenge)
+        if flag_solution is not None:
+            # Remove old flag solutions linked to this challenge
+            for old_flag in challenge.flag_solutions.all():
+                old_flag.challenges.remove(challenge)
+            
+            if flag_solution.strip():
+                flag_obj, _ = FlagSolution.objects.get_or_create(value=flag_solution)
+                flag_obj.challenges.add(challenge)
 
         # ----- Save TextSolution -----
-        if procedure_solution:
-            text_obj = TextSolution.objects.create(
-                content=procedure_solution
-            )
-            text_obj.challenges.add(challenge)
-
-
+        if procedure_solution is not None:
+            # Delete old text solutions linked to this challenge
+            challenge.text_solutions.all().delete()
+            
+            if procedure_solution.strip():
+                text_obj = TextSolution.objects.create(content=procedure_solution)
+                text_obj.challenges.add(challenge)
+                    
         # Update or create ChallengeScore if scores were provided
         if flag_score is not None or procedure_score is not None:
             score_obj = challenge.challenge_score
