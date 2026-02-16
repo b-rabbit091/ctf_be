@@ -642,6 +642,8 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
             try:
                 group_score = getattr(score_analyser, "score", None)
                 group_score = int(group_score) if group_score is not None else 0
+                user_submission_status = getattr(score_analyser, "status", None)
+                status_obj = self._get_status_for_result(user_submission_status)
 
             except Exception:
                 group_score = 0
