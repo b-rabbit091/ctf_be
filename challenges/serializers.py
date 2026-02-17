@@ -250,7 +250,7 @@ class ChallengeDetailSerializer(serializers.ModelSerializer):
     def _is_admin(self) -> bool:
         request = self.context.get("request")
         user = getattr(request, "user", None)
-        return bool(user and user.is_authenticated and user.is_admin)
+        return bool(user and user.is_authenticated and user.is_admin())
 
 
     def get_active_contest(self, obj):
@@ -342,8 +342,8 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
     flag_score = serializers.IntegerField(write_only=True, required=True, min_value=0)
     procedure_score = serializers.IntegerField(write_only=True, required=True, min_value=0)
-    flagSolution = serializers.CharField(write_only=True, required=True, allow_blank=True)
-    procedureSolution = serializers.CharField(write_only=True, required=True, allow_blank=True)
+    flag_solution = serializers.CharField(write_only=True, required=True, allow_blank=True)
+    procedure_solution = serializers.CharField(write_only=True, required=True, allow_blank=True)
 
 
     class Meta:
@@ -371,8 +371,8 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             "active_contest",
             "flag_score",
             "procedure_score",
-            "flagSolution",
-            "procedureSolution",
+            "flag_solution",
+            "procedure_solution",
 
         ]
 
@@ -572,8 +572,8 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
         contest_end_time = validated_data.pop("contest_end_time", None)
         flag_score = validated_data.pop("flag_score", 0)
         procedure_score = validated_data.pop("procedure_score", 0)
-        flag_solution = validated_data.pop("flagSolution", None)
-        procedure_solution = validated_data.pop("procedureSolution", None)
+        flag_solution = validated_data.pop("flag_solution", None)
+        procedure_solution = validated_data.pop("procedure_solution", None)
 
 
         any_contest_field = any(
