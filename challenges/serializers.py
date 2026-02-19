@@ -342,9 +342,10 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
     flag_score = serializers.IntegerField(write_only=True, required=True, min_value=0)
     procedure_score = serializers.IntegerField(write_only=True, required=True, min_value=0)
-    flag_solution = serializers.CharField(write_only=True, required=True, allow_blank=True)
-    procedure_solution = serializers.CharField(write_only=True, required=True, allow_blank=True)
-
+    flagSolution = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
+    procedureSolution = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
+    flag_solution_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    procedure_solution_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Challenge
@@ -371,9 +372,10 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             "active_contest",
             "flag_score",
             "procedure_score",
-            "flag_solution",
-            "procedure_solution",
-
+            "flagSolution",        
+            "procedureSolution",
+            "flag_solution_id",  
+            "procedure_solution_id",
         ]
 
     def get_active_contest(self, obj):
@@ -504,11 +506,11 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
         contest_end_time = validated_data.pop("contest_end_time", None)
         flag_score = validated_data.pop("flag_score", None)
         procedure_score = validated_data.pop("procedure_score", None)
+        flag_solution = validated_data.pop("flagSolution", None)
+        procedure_solution = validated_data.pop("procedureSolution", None)
 
         qtype = validated_data.get("question_type") or "practice"
         validated_data["question_type"] = qtype
-        flag_solution = validated_data.pop("flagSolution", None)
-        procedure_solution = validated_data.pop("procedureSolution", None)
 
 
 
@@ -572,8 +574,10 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
         contest_end_time = validated_data.pop("contest_end_time", None)
         flag_score = validated_data.pop("flag_score", 0)
         procedure_score = validated_data.pop("procedure_score", 0)
-        flag_solution = validated_data.pop("flag_solution", None)
-        procedure_solution = validated_data.pop("procedure_solution", None)
+        flag_solution = validated_data.pop("flagSolution", None)
+        procedure_solution = validated_data.pop("procedureSolution", None)
+        flag_solution_id = validated_data.pop("flag_solution_id", None)
+        procedure_solution_id = validated_data.pop("procedure_solution_id", None)
 
 
         any_contest_field = any(
@@ -590,19 +594,54 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
 
         # 1) Update challenge fields
         challenge = super().update(instance, validated_data)
-        # ----- Save FlagSolution -----
-        if flag_solution:
-            flag_obj, _ = FlagSolution.objects.get_or_create(
-                value=flag_solution
-            )
-            flag_obj.challenges.add(challenge)
+
+
+
+            # ----- Save FlagSolution -----
+        if flag_solution is not None:
+            if flag_solution_id:
+                # Remove the old flag link first
+                try:
+                    old_flag = FlagSolution.objects.get(id=flag_solution_id)
+                    old_flag.challenges.remove(challenge)
+                except FlagSolution.DoesNotExist:
+                    pass
+                
+                # Add new flag if not empty
+                if flag_solution.strip():
+                    flag_obj, _ = FlagSolution.objects.get_or_create(value=flag_solution)
+                    flag_obj.challenges.add(challenge)
+            else:
+                # No ID provided, remove all old and create new
+                for old_flag in challenge.flag_solutions.all():
+                    old_flag.challenges.remove(challenge)
+                if flag_solution.strip():
+                    flag_obj, _ = FlagSolution.objects.get_or_create(value=flag_solution)
+                    flag_obj.challenges.add(challenge)
 
         # ----- Save TextSolution -----
-        if procedure_solution:
-            text_obj = TextSolution.objects.create(
-                content=procedure_solution
-            )
-            text_obj.challenges.add(challenge)
+        if procedure_solution is not None:
+            if procedure_solution_id:
+                # Update existing content
+                try:
+                    text_obj = TextSolution.objects.get(id=procedure_solution_id, challenges=challenge)
+                    if procedure_solution.strip():
+                        text_obj.content = procedure_solution
+                        text_obj.save()
+                    else:
+                        # Empty = delete
+                        text_obj.delete()
+                except TextSolution.DoesNotExist:
+                    # ID invalid, create new
+                    if procedure_solution.strip():
+                        text_obj = TextSolution.objects.create(content=procedure_solution)
+                        text_obj.challenges.add(challenge)
+            else:
+                # No ID provided, delete all old and create new
+                challenge.text_solutions.all().delete()
+                if procedure_solution.strip():
+                    text_obj = TextSolution.objects.create(content=procedure_solution)
+                    text_obj.challenges.add(challenge)
 
 
         # Update or create ChallengeScore if scores were provided
