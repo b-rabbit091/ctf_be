@@ -372,9 +372,9 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
             "active_contest",
             "flag_score",
             "procedure_score",
-            "flagSolution",
+            "flagSolution",        
             "procedureSolution",
-            "flag_solution_id",
+            "flag_solution_id",  
             "procedure_solution_id",
         ]
 
@@ -606,7 +606,7 @@ class ChallengeUpdateSerializer(serializers.ModelSerializer):
                     old_flag.challenges.remove(challenge)
                 except FlagSolution.DoesNotExist:
                     pass
-
+                
                 # Add new flag if not empty
                 if flag_solution.strip():
                     flag_obj, _ = FlagSolution.objects.get_or_create(value=flag_solution)
