@@ -339,12 +339,21 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
         return attrs
 
     def _get_status_for_result(self, is_correct: bool) -> SubmissionStatus:
-        if is_correct:
-            status_value = "correct"
-        else:
-            status_value = "incorrect"
 
-        status_obj = SubmissionStatus.objects.get(status=status_value)
+        if is_correct is True:
+            status_value = "correct"
+            desc = "User submitted a correct solution."
+        elif is_correct is False:
+            status_value = "incorrect"
+            desc = "User submitted an incorrect solution."
+        else:
+            status_value = "pending"
+            desc = "Submission is pending review."
+
+        status_obj, _ = SubmissionStatus.objects.get_or_create(
+            status=status_value,
+            defaults={"description": desc},
+        )
         return status_obj
 
     def _get_contest_for_challenge(self, challenge: Challenge):
