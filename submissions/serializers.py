@@ -76,19 +76,21 @@ class BaseSubmissionSerializer(serializers.ModelSerializer):
           - status="correct"
           - status="incorrect"
         """
-        if is_correct:
+        if is_correct is True:
             status_value = "correct"
             desc = "User submitted a correct solution."
-        else:
+        elif is_correct is False:
             status_value = "incorrect"
             desc = "User submitted an incorrect solution."
+        else:
+            status_value = "pending"
+            desc = "Submission is pending review."
 
         status_obj, _ = SubmissionStatus.objects.get_or_create(
             status=status_value,
             defaults={"description": desc},
         )
         return status_obj
-
 
 class FlagSubmissionSerializer(BaseSubmissionSerializer):
     """
@@ -472,7 +474,7 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
                 {
                     "type": "procedure",
                     "correct": user_submission_status,
-                    "status": status_obj,
+                    "status": status_obj.status,
                     "submitted_at": obj.submitted_at,
                     "submitted_content": content,
                     "user_score": user_score,
@@ -537,8 +539,10 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
         else:
             status_value = "pending"
 
-        return SubmissionStatus.objects.get(status=status_value)
-
+        status_obj, _ = SubmissionStatus.objects.get_or_create(
+            status=status_value,
+        )
+        return status_obj
 
     def _get_contest_for_challenge(self, challenge: Challenge):
         if challenge.question_type != "competition":
