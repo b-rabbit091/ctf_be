@@ -68,7 +68,7 @@ class BaseSubmissionSerializer(serializers.ModelSerializer):
 
         return challenge, contest
 
-    def _get_status_for_result(self, is_correct: bool) -> SubmissionStatus:
+    def _get_status_for_result(self, is_correct) -> SubmissionStatus:
         """
         Map correctness to a SubmissionStatus instance.
         Uses your SubmissionStatus(status, description).
@@ -76,20 +76,14 @@ class BaseSubmissionSerializer(serializers.ModelSerializer):
           - status="correct"
           - status="incorrect"
         """
-        if is_correct is True:
+        if is_correct =="correct":
             status_value = "correct"
-            desc = "User submitted a correct solution."
-        elif is_correct is False:
+        elif is_correct=="incorrect":
             status_value = "incorrect"
-            desc = "User submitted an incorrect solution."
         else:
             status_value = "pending"
-            desc = "Submission is pending review."
 
-        status_obj, _ = SubmissionStatus.objects.get_or_create(
-            status=status_value,
-            defaults={"description": desc},
-        )
+        status_obj= SubmissionStatus.objects.get(status=status_value)
         return status_obj
 
 class FlagSubmissionSerializer(BaseSubmissionSerializer):
@@ -141,7 +135,7 @@ class FlagSubmissionSerializer(BaseSubmissionSerializer):
         value = validated_data["value"].strip()
 
         # Evaluate correctness against FlagSolution
-        is_correct = FlagSolution.objects.filter(challenges=challenge, value=value).exists()
+        is_correct = "correct" if FlagSolution.objects.filter(challenges=challenge, value=value).exists() else "incorrect"
 
         status = self._get_status_for_result(is_correct)
 
@@ -338,22 +332,17 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
 
         return attrs
 
-    def _get_status_for_result(self, is_correct: bool) -> SubmissionStatus:
+    def _get_status_for_result(self, is_correct) -> SubmissionStatus:
 
-        if is_correct is True:
+        if is_correct.lower() == "correct":
             status_value = "correct"
-            desc = "User submitted a correct solution."
-        elif is_correct is False:
+        elif is_correct.lower() =="incorrect":
             status_value = "incorrect"
-            desc = "User submitted an incorrect solution."
         else:
             status_value = "pending"
-            desc = "Submission is pending review."
 
-        status_obj, _ = SubmissionStatus.objects.get_or_create(
-            status=status_value,
-            defaults={"description": desc},
-        )
+
+        status_obj = SubmissionStatus.objects.get(status=status_value)
         return status_obj
 
     def _get_contest_for_challenge(self, challenge: Challenge):
@@ -385,11 +374,11 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
 
     def _check_flag_correct(self, challenge: Challenge, value: str) -> bool:
         normalized = value.strip()
-        return FlagSolution.objects.filter(challenges=challenge, value=normalized).exists()
+        return "correct" if FlagSolution.objects.filter(challenges=challenge, value=normalized).exists() else "incorrect"
 
     def _check_procedure_correct(self, challenge: Challenge, content: str) -> bool:
         normalized = content.strip()
-        return TextSolution.objects.filter(challenges=challenge, content=normalized).exists()
+        return "correct" if TextSolution.objects.filter(challenges=challenge, content=normalized).exists()  else "incorrect"
 
     @transaction.atomic
     def create(self, validated_data):
@@ -436,7 +425,6 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
         # PROCEDURE
         if "content" in validated_data:
             content = validated_data["content"]
-            is_correct = self._check_procedure_correct(challenge, content)
             text_solution = SolutionUtils.get_text_solution_for_challenge(challenge)
             procedure_score = challenge.challenge_score.procedure_score
             if not procedure_score:
@@ -541,14 +529,14 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
         return attrs
 
     def _get_status_for_result(self, is_correct):
-        if is_correct is True:
+        if is_correct =="correct":
             status_value = "correct"
-        elif is_correct is False:
+        elif is_correct =="incorrect":
             status_value = "incorrect"
         else:
             status_value = "pending"
 
-        status_obj, _ = SubmissionStatus.objects.get_or_create(
+        status_obj= SubmissionStatus.objects.get(
             status=status_value,
         )
         return status_obj
@@ -575,11 +563,11 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
 
     def _check_flag_correct(self, challenge: Challenge, value: str) -> bool:
         normalized = value.strip()
-        return FlagSolution.objects.filter(challenges=challenge, value=normalized).exists()
+        return "correct" if FlagSolution.objects.filter(challenges=challenge, value=normalized).exists() else "incorrect"
 
     def _check_procedure_correct(self, challenge: Challenge, content: str) -> bool:
         normalized = content.strip()
-        return TextSolution.objects.filter(challenges=challenge, content=normalized).exists()
+        return "correct" if TextSolution.objects.filter(challenges=challenge, content=normalized).exists() else "incorrect"
 
     @transaction.atomic
     def create(self, validated_data):
@@ -608,7 +596,7 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
             status_obj = self._get_status_for_result(is_correct)
 
             flag_score = getattr(challenge.challenge_score, "flag_score", 0) or 0
-            group_score = int(flag_score) if is_correct else 0
+            group_score = int(flag_score) if is_correct=="correct" else 0
 
             obj = GroupFlagSubmission.objects.create(
                 group=group,
