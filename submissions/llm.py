@@ -156,7 +156,7 @@ def call_coach_llm(
 
     user_solution = (user_solution or "").strip()
     if not user_solution:
-        return ScoreAnalyser(reply="Please provide your solution attempt so I can evaluate it.", score=0, max_score=0)
+        return ScoreAnalyser(reply="Please provide your solution attempt so I can evaluate it.", score=0, max_score=0, status="pending")
 
     user_solution = user_solution[:8000]
 
@@ -209,7 +209,7 @@ def call_coach_llm(
             break
 
     if last_err == "rate_limited":
-        return ScoreAnalyser(reply="Too many requests right now. Please wait a moment and try again.", score=0, max_score=ms)
+        return ScoreAnalyser(reply="Too many requests right now. Please wait a moment and try again.", score=0, max_score=ms, status="pending")
     if last_err == "timeout":
-        return ScoreAnalyser(reply="The AI took too long to respond. Please try again.", score=0, max_score=ms)
-    return ScoreAnalyser(reply=FALLBACK_REPLY, score=0, max_score=ms)
+        return ScoreAnalyser(reply="The AI took too long to respond. Please try again.", score=0, max_score=ms, status="pending")
+    return ScoreAnalyser(reply=FALLBACK_REPLY, score=0, max_score=ms, status="pending")
