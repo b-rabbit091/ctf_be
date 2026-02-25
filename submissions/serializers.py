@@ -372,11 +372,11 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
 
         return contest
 
-    def _check_flag_correct(self, challenge: Challenge, value: str) -> bool:
+    def _check_flag_correct(self, challenge: Challenge, value: str) -> str:
         normalized = value.strip()
         return "correct" if FlagSolution.objects.filter(challenges=challenge, value=normalized).exists() else "incorrect"
 
-    def _check_procedure_correct(self, challenge: Challenge, content: str) -> bool:
+    def _check_procedure_correct(self, challenge: Challenge, content: str) -> str:
         normalized = content.strip()
         return "correct" if TextSolution.objects.filter(challenges=challenge, content=normalized).exists()  else "incorrect"
 
@@ -401,12 +401,10 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
             value = validated_data["value"].strip()
             is_correct = self._check_flag_correct(challenge, value)
             status_obj = self._get_status_for_result(is_correct)
-            flag_score = challenge.challenge_score.flag_score
-            if not flag_score:
-                flag_score = 1
-            user_score = 0
-            if is_correct:
-                user_score = flag_score
+
+            flag_score = getattr(challenge.challenge_score, "flag_score", 0) or 0
+            user_score = int(flag_score) if is_correct=="correct" else 0
+
 
             obj = UserFlagSubmission.objects.create(user=user, challenge=challenge, contest=contest, value=value,
                                                     status=status_obj, user_score=user_score)
