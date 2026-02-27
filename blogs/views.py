@@ -1,6 +1,7 @@
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
+from backend.function_logging import log_function_execution
 from challenges.permissions import IsAdminOrReadOnly
 
 from .models import Blog

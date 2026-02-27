@@ -4,6 +4,12 @@ from django.urls import include, path, re_path
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from django.http import HttpResponse
+
+def metrics_view(request):
+    """Expose Prometheus metrics."""
+    return HttpResponse(generate_latest(), content_type=CONTENT_TYPE_LATEST)
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -25,6 +31,7 @@ urlpatterns = [
     path("ctf/api/blogs/", include("blogs.urls")),
     path("ctf/api/dashboard/", include("dashboard.urls")),
     path("ctf/api/chat/", include("chat.urls")),
+    path("ctf/metrics", metrics_view, name="prometheus-metrics"),
     re_path(r"^swagger(?P<format>\.json|\.yaml)$", schema_view.without_ui(cache_timeout=0), name="schema-json"),
     path("ctf/swagger/", schema_view.with_ui("swagger", cache_timeout=0), name="schema-swagger-ui"),
     path("ctf/redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),

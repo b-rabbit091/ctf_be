@@ -16,3 +16,7 @@ ruff
 black
 pre-commit
 django-filter
+requests
+prometheus-client
+django-prometheus
+python-json-logger

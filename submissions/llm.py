@@ -9,6 +9,7 @@ from .utils import (
     get_llm_client,
     safe_extract_json_from_text,
 )
+from backend.llm_logging import LLMLogger
 
 # ----------------------------
 # Config (override via env)
@@ -145,6 +146,8 @@ def call_coach_llm(
     challenge: Dict[str, Any],
     exact_solution: str,
     max_score: int,
+    request_id: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> ScoreAnalyser:
     """
     Provider-agnostic:
@@ -152,6 +155,7 @@ def call_coach_llm(
     - call provider adapter
     - parse strict JSON output
     - retries + safe fallbacks
+    - comprehensive logging and metrics
     """
 
     user_solution = (user_solution or "").strip()
@@ -176,14 +180,53 @@ def call_coach_llm(
 
     client = get_llm_client(provider=LLM_PROVIDER, timeout_s=LLM_TIMEOUT_S, model=LLM_MODEL or None)
 
+    # Get actual model name
+    model_name = getattr(client, 'model', LLM_MODEL or 'unknown')
+
+    # Log the request
+    LLMLogger.log_request(
+        provider=LLM_PROVIDER,
+        model=model_name,
+        app='submissions',
+        prompt=json.dumps(messages),
+        request_id=request_id,
+        user_id=user_id,
+        challenge_id=challenge.get('id') if challenge else None,
+        max_score=ms,
+        solution_length=len(user_solution)
+    )
+
     last_err: Optional[str] = None
+    start_time = time.time()
+
     for attempt in range((LLM_MAX_RETRIES or 0) + 1):
         try:
             raw_text = client.generate_text(messages)
 
             obj = safe_extract_json_from_text(raw_text)
             if not isinstance(obj, dict):
-                return ScoreAnalyser(reply="I couldn’t format the evaluation properly. Please try again.", score=0, max_score=ms, status="pending")
+                error_result = ScoreAnalyser(
+                    reply="I couldn't format the evaluation properly. Please try again.",
+                    score=0,
+                    max_score=ms,
+                    status="pending"
+                )
+
+                # Log parsing failure
+                LLMLogger.log_response(
+                    provider=LLM_PROVIDER,
+                    model=model_name,
+                    app='submissions',
+                    response_text=raw_text[:500],
+                    status='parsing_error',
+                    duration=time.time() - start_time,
+                    request_id=request_id,
+                    user_id=user_id,
+                    challenge_id=challenge.get('id') if challenge else None,
+                    attempt=attempt + 1
+                )
+
+                return error_result
 
             reply = str(obj.get("reply") or "").strip()
             score = _clamp_score(obj.get("score"), ms)
@@ -192,20 +235,77 @@ def call_coach_llm(
             # If the model tried to change max_score, ignore it and enforce ours
             # (still include it in the output object we return).
             if not reply:
-                reply = "Share more details about your approach (inputs, outputs, edge cases) and I’ll guide you."
+                reply = "Share more details about your approach (inputs, outputs, edge cases) and I'll guide you."
             if len(reply) > 2000:
                 reply = reply[:2000].rstrip() + "…"
+
+            # Log successful response
+            LLMLogger.log_response(
+                provider=LLM_PROVIDER,
+                model=model_name,
+                app='submissions',
+                response_text=reply,
+                status='success',
+                duration=time.time() - start_time,
+                request_id=request_id,
+                user_id=user_id,
+                challenge_id=challenge.get('id') if challenge else None,
+                score=score,
+                max_score=ms,
+                evaluation_status=status,
+                attempt=attempt + 1,
+                raw_response_length=len(raw_text)
+            )
 
             return ScoreAnalyser(reply=reply, score=score, max_score=ms, status=status)
 
         except LLMTransientError as e:
             last_err = getattr(e, "code", None) or "transient"
+
+            # Log retry
             if attempt < (LLM_MAX_RETRIES or 0):
+                LLMLogger.log_retry(
+                    provider=LLM_PROVIDER,
+                    model=model_name,
+                    app='submissions',
+                    retry_number=attempt + 1,
+                    reason=last_err,
+                    request_id=request_id
+                )
                 time.sleep(0.6 * (attempt + 1))
                 continue
+
+            # Log final error
+            LLMLogger.log_error(
+                provider=LLM_PROVIDER,
+                model=model_name,
+                app='submissions',
+                error_type='LLMTransientError',
+                error_message=last_err,
+                duration=time.time() - start_time,
+                request_id=request_id,
+                user_id=user_id,
+                challenge_id=challenge.get('id') if challenge else None,
+                total_attempts=attempt + 1
+            )
             break
-        except Exception:
+
+        except Exception as ex:
             last_err = "unknown"
+
+            # Log error
+            LLMLogger.log_error(
+                provider=LLM_PROVIDER,
+                model=model_name,
+                app='submissions',
+                error_type=type(ex).__name__,
+                error_message=str(ex),
+                duration=time.time() - start_time,
+                request_id=request_id,
+                user_id=user_id,
+                challenge_id=challenge.get('id') if challenge else None,
+                total_attempts=attempt + 1
+            )
             break
 
     if last_err == "rate_limited":

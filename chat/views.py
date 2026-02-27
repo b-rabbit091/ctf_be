@@ -10,6 +10,8 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
+from backend.function_logging import log_function_execution, log_function_execution
+
 from challenges.models import (  # adjust if app name differs
     Challenge,
     FlagSolution,

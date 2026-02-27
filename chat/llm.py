@@ -11,6 +11,7 @@ from .utils import (
     get_llm_client,
     safe_extract_json_from_text,
 )
+from backend.llm_logging import LLMLogger
 
 # ----------------------------
 # Config (override via env)
@@ -117,7 +118,6 @@ def build_messages(
             messages.append({"role": role, "content": content})
 
     messages.append({"role": "user", "content": user_text})
-
     return messages
 
 
@@ -127,6 +127,8 @@ def call_coach_llm(
     challenge: Dict[str, Any],
     solution: Dict[str, Any],
     recent_turns: List[Dict[str, str]],
+    request_id: Optional[str] = None,
+    user_id: Optional[str] = None,
 ) -> CoachResult:
     """
     Provider-agnostic:
@@ -134,6 +136,7 @@ def call_coach_llm(
     - call provider adapter
     - parse strict JSON output
     - retries + safe fallbacks
+    - comprehensive logging + Prometheus metrics via backend.llm_logging.LLMLogger
     """
     user_text = (user_text or "").strip()
     if not user_text:
@@ -149,15 +152,50 @@ def call_coach_llm(
 
     client = get_llm_client(provider=LLM_PROVIDER, timeout_s=LLM_TIMEOUT_S, model=LLM_MODEL or None)
 
+    # Get actual model name
+    model_name = getattr(client, "model", None) or (LLM_MODEL or "unknown")
+    challenge_id = challenge.get("id") if challenge else None
+
+    # IMPORTANT: do NOT log full prompt content in prod; log length + counts
+    prompt_str = json.dumps(messages, ensure_ascii=False)
+
+    # Request log (also useful for request volume analysis)
+    LLMLogger.log_request(
+        provider=LLM_PROVIDER,
+        model=model_name,
+        app="chat",
+        prompt=prompt_str,
+        request_id=request_id,
+        user_id=user_id,
+        challenge_id=challenge_id,
+        message_count=len(messages),
+    )
+
     last_err: Optional[str] = None
+
     for attempt in range(LLM_MAX_RETRIES + 1):
+        attempt_start = time.time()
         try:
             raw_text = client.generate_text(messages)
 
             obj = safe_extract_json_from_text(raw_text)
             if not obj:
+                # Parsing / format error: record as a non-success response
+                LLMLogger.log_response(
+                    provider=LLM_PROVIDER,
+                    model=model_name,
+                    app="chat",
+                    response_text=raw_text[:500],
+                    status="parsing_error",
+                    duration=time.time() - attempt_start,
+                    request_id=request_id,
+                    user_id=user_id,
+                    challenge_id=challenge_id,
+                    attempt=attempt + 1,
+                    raw_response_length=len(raw_text or ""),
+                )
                 return CoachResult(
-                    reply="I couldn’t format the feedback properly. Please try again.",
+                    reply="I couldn't format the feedback properly. Please try again.",
                     percent_on_track=50,
                 )
 
@@ -167,19 +205,72 @@ def call_coach_llm(
             if len(reply) > 2000:
                 reply = reply[:2000].rstrip() + "…"
             if not reply:
-                reply = "Tell me what you tried so far, and I’ll guide your next step."
+                reply = "Tell me what you tried so far, and I'll guide your next step."
 
+            # Success response (records Prometheus metrics inside LLMLogger.log_response)
+            LLMLogger.log_response(
+                provider=LLM_PROVIDER,
+                model=model_name,
+                app="chat",
+                response_text=reply,
+                status="success",
+                duration=time.time() - attempt_start,
+                request_id=request_id,
+                user_id=user_id,
+                challenge_id=challenge_id,
+                percent_on_track=pct,
+                attempt=attempt + 1,
+                raw_response_length=len(raw_text or ""),
+            )
             return CoachResult(reply=reply, percent_on_track=pct)
 
         except LLMTransientError as e:
-            last_err = e.code
+            last_err = e.code or "transient_error"
+
+            # If we can retry, log retry metric + event and continue
             if attempt < LLM_MAX_RETRIES:
+                LLMLogger.log_retry(
+                    provider=LLM_PROVIDER,
+                    model=model_name,
+                    app="chat",
+                    retry_number=attempt + 1,
+                    reason=last_err,
+                    request_id=request_id,
+                )
                 time.sleep(0.6 * (attempt + 1))
                 continue
+
+            # Final transient failure (records Prometheus error metric inside log_error)
+            LLMLogger.log_error(
+                provider=LLM_PROVIDER,
+                model=model_name,
+                app="chat",
+                error_type="LLMTransientError",
+                error_message=last_err,
+                duration=time.time() - attempt_start,
+                request_id=request_id,
+                user_id=user_id,
+                challenge_id=challenge_id,
+                total_attempts=attempt + 1,
+            )
             break
-        except Exception:
-            # Non-transient / unexpected
+
+        except Exception as ex:
             last_err = "unknown"
+
+            # Unexpected error (records Prometheus error metric inside log_error)
+            LLMLogger.log_error(
+                provider=LLM_PROVIDER,
+                model=model_name,
+                app="chat",
+                error_type=type(ex).__name__,
+                error_message=str(ex),
+                duration=time.time() - attempt_start,
+                request_id=request_id,
+                user_id=user_id,
+                challenge_id=challenge_id,
+                total_attempts=attempt + 1,
+            )
             break
 
     if last_err == "rate_limited":

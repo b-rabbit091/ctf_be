@@ -13,12 +13,14 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from datetime import timedelta
 from pathlib import Path
+from backend.integration.teams import drf_exception_handler
+from backend.logging_config import get_logging_config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# BASE_URL = "http://localhost"
-BASE_URL = "https://cite8.nwmissouri.edu/ctf"
+BASE_URL = "http://localhost"
+#BASE_URL = "https://cite8.nwmissouri.edu/ctf"
 
 
 MEDIA_URL = "/ctf/media/"
@@ -43,10 +45,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG')
 
-ALLOWED_HOSTS = os.getenv(
-    "DJANGO_ALLOWED_HOSTS",
-    "cite8.nwmissouri.edu"
-).split(",")
+ALLOWED_HOSTS = ["*"]
 
 
 # Application definition
@@ -67,10 +66,14 @@ INSTALLED_APPS = [
     "chat",
     "drf_yasg",
     "corsheaders",
+    "django_prometheus",
 ]
 INSTALLED_APPS += ["django_filters"]
 
 MIDDLEWARE = [
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
+    "backend.middleware.RequestLoggingMiddleware",
+    "backend.middleware.TeamsExceptionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -79,16 +82,17 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
 ]
 
-CORS_ALLOW_ALL_ORIGINS = False
-
-CORS_ALLOWED_ORIGINS = [
-    "https://cite8.nwmissouri.edu",
-]
-CSRF_TRUSTED_ORIGINS = [
-    "https://cite8.nwmissouri.edu",
-]
+# CORS_ALLOW_ALL_ORIGINS = False
+#
+# CORS_ALLOWED_ORIGINS = [
+#     "https://cite8.nwmissouri.edu",
+# ]
+# CSRF_TRUSTED_ORIGINS = [
+#     "https://cite8.nwmissouri.edu",
+# ]
 
 ROOT_URLCONF = "backend.urls"
 AUTH_USER_MODEL = "users.User"
@@ -145,6 +149,11 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv("EMAIL_HOST_USER")
 
+TEAMS_WEBHOOK_URL = os.getenv("TEAMS_WEBHOOK_URL", "")
+TEAMS_ALERTS_ENABLED = os.getenv("TEAMS_ALERTS_ENABLED", "true").lower() == "true"
+
+
+
 # REST Framework + JWT
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
@@ -153,6 +162,8 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "chat_practice": "30/min",  # tune as you like
     },
+    "EXCEPTION_HANDLER": "backend.integration.teams.drf_exception_handler",
+
 }
 
 
@@ -203,3 +214,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Logging configuration
+LOGGING = get_logging_config()
+

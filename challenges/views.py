@@ -5,6 +5,8 @@ from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
+from backend.function_logging import log_function_execution
+
 from .models import Category, Challenge, Contest, Difficulty, SolutionType
 from .permissions import IsAdminOnly, IsAdminOrReadOnly
 from .serializers import (

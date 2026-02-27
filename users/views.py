@@ -19,6 +19,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from backend.function_logging import log_function_execution, log_function_execution
+
 from .models import EmailVerificationToken, Group, GroupInvitation, Role, UserGroup
 from .permissions import IsAdminUser, IsOwnerOrAdmin
 from .serializers import (

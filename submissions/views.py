@@ -14,6 +14,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.function_logging import log_function_execution
+
 from challenges.models import Challenge, Contest
 from submissions.models import (
     GroupFlagSubmission,
