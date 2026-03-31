@@ -80,17 +80,18 @@ class UserViewSet(viewsets.ModelViewSet):
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = serializer.save()  # role=student, is_active=False
+        with transaction.atomic():
+            user = serializer.save()
 
-        token = generate_secure_uuid()
-        student_role = Role.objects.get(name="student")
+            token = generate_secure_uuid()
+            student_role = Role.objects.get(name="student")
 
-        EmailVerificationToken.objects.create(
-            user=user,
-            token=token,
-            role=student_role,
-            expires_at=timezone.now() + timedelta(days=2),
-        )
+            EmailVerificationToken.objects.create(
+                user=user,
+                token=token,
+                role=student_role,
+                expires_at=timezone.now() + timedelta(days=2),
+            )
         send_verification_email(user, token, "student")
 
         return Response(
@@ -164,18 +165,18 @@ class AdminInviteViewSet(viewsets.ViewSet):
             admin_role = Role.objects.get(name="admin")
         except Role.DoesNotExist:
             return Response({"error": "Admin role does not exist"}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            try:
+                # Create inactive user
+                user = User.objects.create(username=username, email=email, role=None, is_active=False)
 
-        try:
-            # Create inactive user
-            user = User.objects.create(username=username, email=email, role=None, is_active=False)
+                # Generate verification token
+                token = generate_secure_uuid()
+                EmailVerificationToken.objects.create(user=user, token=token, role=admin_role, expires_at=timezone.now() + timedelta(days=2))
 
-            # Generate verification token
-            token = generate_secure_uuid()
-            EmailVerificationToken.objects.create(user=user, token=token, role=admin_role, expires_at=timezone.now() + timedelta(days=2))
-
-            send_verification_email(user, token, "admin")
-        except Exception:
-            return Response({"error": "Error while registering admin."}, status.HTTP_400_BAD_REQUEST)
+                send_verification_email(user, token, "admin")
+            except Exception:
+                return Response({"error": "Error while registering admin."}, status.HTTP_400_BAD_REQUEST)
 
         return Response({"detail": "Verification email sent to the new admin."}, status=status.HTTP_200_OK)
 
@@ -208,17 +209,17 @@ class VerifyEmailView(APIView):
 
         if token_obj.expires_at < timezone.now():
             return Response({"error": "Token expired"}, status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            user = token_obj.user
+            user.set_password(password)
+            role = token_obj.role
+            if not role:
+                role = user.role
+            user.role = role
+            user.is_active = True
+            user.save()
 
-        user = token_obj.user
-        user.set_password(password)
-        role = token_obj.role
-        if not role:
-            role = user.role
-        user.role = role
-        user.is_active = True
-        user.save()
-
-        token_obj.delete()
+            token_obj.delete()
 
         return Response({"detail": "Password set successfully. You can now login."}, status=status.HTTP_201_CREATED)
 
