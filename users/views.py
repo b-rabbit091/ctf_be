@@ -1,4 +1,5 @@
 # users/views.py
+from django.contrib.auth.password_validation import validate_password
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -26,14 +27,48 @@ from .serializers import (
     GroupListSerializer,
     MyTokenObtainPairSerializer,
     RegisterSerializer,
+    SetPasswordWithTokenSerializer,
 )
 from .utils import (
+    EmailDeliveryError,
     generate_secure_uuid,
     send_reset_password_email,
     send_verification_email,
 )
 
 User = get_user_model()
+
+
+def _is_admin(user) -> bool:
+    return bool(user and user.is_authenticated and hasattr(user, "is_admin") and user.is_admin())
+
+
+def _replace_user_token(user: User, *, role: Role, purpose: str) -> EmailVerificationToken:
+    now = timezone.now()
+    EmailVerificationToken.objects.filter(user=user, purpose=purpose).delete()
+    return EmailVerificationToken.objects.create(
+        user=user,
+        token=generate_secure_uuid(),
+        role=role,
+        purpose=purpose,
+        expires_at=now + timedelta(days=2),
+    )
+
+
+def _consume_token(token_value, *, expected_purposes: set[str]) -> EmailVerificationToken:
+    try:
+        token_obj = EmailVerificationToken.objects.select_related("user", "role").get(token=token_value)
+    except EmailVerificationToken.DoesNotExist as exc:
+        raise ValidationError({"detail": "Invalid or expired token."}) from exc
+
+    if token_obj.purpose not in expected_purposes:
+        raise ValidationError({"detail": "Invalid or expired token."})
+
+    if token_obj.expires_at < timezone.now():
+        token_obj.delete()
+        raise ValidationError({"detail": "Invalid or expired token."})
+
+    return token_obj
 
 
 # ----------------------
@@ -80,20 +115,20 @@ class UserViewSet(viewsets.ModelViewSet):
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        with transaction.atomic():
-            user = serializer.save()
-
-            token = generate_secure_uuid()
-            student_role = Role.objects.get(name="student")
-
-            EmailVerificationToken.objects.create(
-                user=user,
-                token=token,
-                role=student_role,
-                expires_at=timezone.now() + timedelta(days=2),
-            )
-        send_verification_email(user, token, "student")
-
+        try:
+            with transaction.atomic():
+                student_role = Role.objects.get(name="student")
+                user = serializer.save()
+                token_obj = _replace_user_token(
+                    user,
+                    role=student_role,
+                    purpose=EmailVerificationToken.PURPOSE_EMAIL_VERIFICATION,
+                )
+                send_verification_email(user, token_obj.token, "student")
+        except Role.DoesNotExist as exc:
+            raise ValidationError({"detail": "Registration is unavailable right now."}) from exc
+        except EmailDeliveryError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
         return Response(
             {"detail": "Verification email sent to your email address."},
             status=status.HTTP_201_CREATED,
@@ -104,25 +139,31 @@ class UserViewSet(viewsets.ModelViewSet):
         """
         Generate password reset token and send to user email
         """
-        email = request.data.get("email")
+        email = (request.data.get("email") or "").strip().lower()
         if not email:
-            return Response({"error": "Email required"}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError({"email": "Email is required."})
+
+        generic_response = Response(
+            {"detail": "If an account exists for that email, a password reset link has been sent."},
+            status=status.HTTP_200_OK,
+        )
+
+        user = User.objects.filter(email__iexact=email).select_related("role").first()
+        if not user or not user.is_active or not user.role_id:
+            return generic_response
 
         try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            return Response({"error": "Email role does not exist"}, status=status.HTTP_400_BAD_REQUEST)
+            with transaction.atomic():
+                token_obj = _replace_user_token(
+                    user,
+                    role=user.role,
+                    purpose=EmailVerificationToken.PURPOSE_PASSWORD_RESET,
+                )
+                send_reset_password_email(user, token_obj.token)
+        except EmailDeliveryError:
+            return generic_response
 
-        token = generate_secure_uuid()
-        EmailVerificationToken.objects.create(
-            user=user,
-            token=token,
-            role=user.role,
-            expires_at=timezone.now() + timedelta(days=2),
-        )
-        send_reset_password_email(user, token)
-
-        return Response({"detail": "Reset password email sent."}, status=status.HTTP_200_OK)
+        return generic_response
 
     @action(detail=False, methods=["post"], url_path="change-password")
     def change_password(self, request):
@@ -165,18 +206,19 @@ class AdminInviteViewSet(viewsets.ViewSet):
             admin_role = Role.objects.get(name="admin")
         except Role.DoesNotExist:
             return Response({"error": "Admin role does not exist"}, status=status.HTTP_400_BAD_REQUEST)
-        with transaction.atomic():
-            try:
-                # Create inactive user
-                user = User.objects.create(username=username, email=email, role=None, is_active=False)
-
-                # Generate verification token
-                token = generate_secure_uuid()
-                EmailVerificationToken.objects.create(user=user, token=token, role=admin_role, expires_at=timezone.now() + timedelta(days=2))
-
-                send_verification_email(user, token, "admin")
-            except Exception:
-                return Response({"error": "Error while registering admin."}, status.HTTP_400_BAD_REQUEST)
+        try:
+            with transaction.atomic():
+                user = User.objects.create(username=username, email=email.strip().lower(), role=None, is_active=False)
+                token_obj = _replace_user_token(
+                    user,
+                    role=admin_role,
+                    purpose=EmailVerificationToken.PURPOSE_ADMIN_INVITE,
+                )
+                send_verification_email(user, token_obj.token, "admin")
+        except (IntegrityError, ValidationError):
+            return Response({"error": "Error while registering admin."}, status.HTTP_400_BAD_REQUEST)
+        except EmailDeliveryError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         return Response({"detail": "Verification email sent to the new admin."}, status=status.HTTP_200_OK)
 
@@ -193,35 +235,49 @@ class VerifyEmailView(APIView):
     permission_classes = []
 
     def post(self, request):
-        token_param = request.data.get("token")
-        password = request.data.get("password")
-        confirm_password = request.data.get("confirm_password")
-        if confirm_password != password:
-            return Response({"error": "Passwords donot match."}, status.HTTP_400_BAD_REQUEST)
-
-        if not token_param or not password:
-            return Response({"error": "Token and password required"}, status.HTTP_400_BAD_REQUEST)
-
-        try:
-            token_obj = EmailVerificationToken.objects.get(token=token_param)
-        except EmailVerificationToken.DoesNotExist:
-            return Response({"error": "Invalid token"}, status.HTTP_400_BAD_REQUEST)
-
-        if token_obj.expires_at < timezone.now():
-            return Response({"error": "Token expired"}, status.HTTP_400_BAD_REQUEST)
+        serializer = SetPasswordWithTokenSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token_obj = _consume_token(
+            serializer.validated_data["token"],
+            expected_purposes={
+                EmailVerificationToken.PURPOSE_EMAIL_VERIFICATION,
+                EmailVerificationToken.PURPOSE_ADMIN_INVITE,
+            },
+        )
         with transaction.atomic():
             user = token_obj.user
-            user.set_password(password)
+            user.set_password(serializer.validated_data["password"])
             role = token_obj.role
             if not role:
                 role = user.role
             user.role = role
             user.is_active = True
-            user.save()
+            user.save(update_fields=["password", "role", "is_active"])
 
             token_obj.delete()
 
         return Response({"detail": "Password set successfully. You can now login."}, status=status.HTTP_201_CREATED)
+
+
+class ResetPasswordConfirmView(APIView):
+    permission_classes = []
+
+    def post(self, request):
+        serializer = SetPasswordWithTokenSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token_obj = _consume_token(
+            serializer.validated_data["token"],
+            expected_purposes={EmailVerificationToken.PURPOSE_PASSWORD_RESET},
+        )
+
+        with transaction.atomic():
+            user = token_obj.user
+            validate_password(serializer.validated_data["password"], user=user)
+            user.set_password(serializer.validated_data["password"])
+            user.save(update_fields=["password"])
+            token_obj.delete()
+
+        return Response({"detail": "Password reset successfully. You can now login."}, status=status.HTTP_200_OK)
 
 
 class UserGroupViewSet(viewsets.ModelViewSet):
@@ -233,7 +289,7 @@ class UserGroupViewSet(viewsets.ModelViewSet):
         return Group.objects.all().annotate(members_count=Count("members")).prefetch_related("members__user").order_by("name")
 
     def list(self, request, *args, **kwargs):
-        if not request.user.is_admin:
+        if not _is_admin(request.user):
             raise PermissionDenied("Only admins can list all groups.")
 
         qs = self.get_queryset()
@@ -287,10 +343,19 @@ class UserGroupViewSet(viewsets.ModelViewSet):
 
         raw_name = (request.data.get("name") or "").strip()
         name = " ".join(raw_name.split())
-        min_members = request.data.get("min_members", 2)
-        max_members = request.data.get("max_members", 2)
+        min_members_raw = request.data.get("min_members", 2)
+        max_members_raw = request.data.get("max_members", 2)
 
-        if int(min_members) < 2 and int(max_members) > 10:
+        try:
+            min_members = int(min_members_raw)
+            max_members = int(max_members_raw)
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "Minimum and maximum members must be integers."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if min_members < 2 or max_members > 10 or min_members > max_members:
             return Response({"error": "Minimum or maximum members do not fall within 2-10 range."}, status=status.HTTP_400_BAD_REQUEST)
 
         if not name:
@@ -359,7 +424,7 @@ class UserGroupViewSet(viewsets.ModelViewSet):
                     raise NotFound(detail="Group not found.")
 
                 # Object-level authZ (raises PermissionDenied with safe messages)
-                if not self.request.user.is_admin:
+                if not _is_admin(self.request.user):
                     self.ensure_group_admin(group, user)
 
                 # Perform delete

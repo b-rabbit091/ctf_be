@@ -1,15 +1,33 @@
 # users/utils.py
 import uuid
+from smtplib import SMTPException
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
-from rest_framework import status
-from rest_framework.response import Response
 
 from users.models import Group, UserGroup
 
 User = get_user_model()
+
+
+class EmailDeliveryError(Exception):
+    pass
+
+
+def _send_platform_email(subject: str, message: str, recipient_list: list[str]) -> None:
+    try:
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            recipient_list,
+            fail_silently=False,
+        )
+    except Exception as exc:
+        if isinstance(exc, SMTPException):
+            raise EmailDeliveryError("Unable to deliver email right now.") from exc
+        raise EmailDeliveryError("Unable to deliver email right now.") from exc
 
 
 def send_verification_email(user, token, role_name):
@@ -31,16 +49,7 @@ This link is valid for 48 hours.
 
 Role assigned: {role_name.capitalize()}
 """
-    from_email = settings.DEFAULT_FROM_EMAIL
-    recipient_list = [user.email]
-
-    send_mail(
-        subject,
-        message,
-        from_email,
-        recipient_list,
-        fail_silently=False,
-    )
+    _send_platform_email(subject, message, [user.email])
 
 
 def send_reset_password_email(user, token):
@@ -60,15 +69,7 @@ Please set your password by clicking the link below:
 
 This link is valid for 48 hours.
 """
-    from_email = settings.DEFAULT_FROM_EMAIL
-    recipient_list = [user.email]
-    send_mail(
-        subject,
-        message,
-        from_email,
-        recipient_list,
-        fail_silently=False,
-    )
+    _send_platform_email(subject, message, [user.email])
 
 
 def generate_secure_uuid():

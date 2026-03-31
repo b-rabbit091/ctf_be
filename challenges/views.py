@@ -19,6 +19,10 @@ from .serializers import (
 )
 
 
+def _is_admin(user) -> bool:
+    return bool(user and user.is_authenticated and hasattr(user, "is_admin") and user.is_admin())
+
+
 class ChallengeViewSet(viewsets.ModelViewSet):
     queryset = Challenge.objects.all().order_by("-created_at")
     serializer_class = ChallengeListSerializer
@@ -70,7 +74,7 @@ class ChallengeViewSet(viewsets.ModelViewSet):
     # ---- create ----------------------------------------------------
 
     def create(self, request, *args, **kwargs):
-        if not getattr(request.user, "is_admin", False):
+        if not _is_admin(request.user):
             return Response(
                 {"detail": "You do not have permission to perform this action."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -94,7 +98,7 @@ class ChallengeViewSet(viewsets.ModelViewSet):
         """
         Full update. Admin-only. Handles both practice & competition.
         """
-        if not getattr(request.user, "is_admin", False):
+        if not _is_admin(request.user):
             return Response(
                 {"detail": "You do not have permission to perform this action."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -116,7 +120,7 @@ class ChallengeViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["patch"], url_path="bulk-update")
     def bulk_update(self, request, *args, **kwargs):
-        if not getattr(request.user, "is_admin", False):
+        if not _is_admin(request.user):
             return Response(
                 {"detail": "You do not have permission to perform this action."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -283,12 +287,12 @@ class ContestViewSet(viewsets.ModelViewSet):
 
     # your create/list overrides can remain or be removed (permission already covers)
     def create(self, request, *args, **kwargs):
-        if not getattr(request.user, "is_admin", False):
+        if not _is_admin(request.user):
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
         return super().create(request, *args, **kwargs)
 
     def list(self, request, *args, **kwargs):
-        if not getattr(request.user, "is_admin", False):
+        if not _is_admin(request.user):
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
         return super().list(request, *args, **kwargs)
 
@@ -301,7 +305,7 @@ class ContestViewSet(viewsets.ModelViewSet):
         Meaning:
           remove these challenge ids from THIS contest only (delete M2M join rows)
         """
-        if not getattr(request.user, "is_admin", False):
+        if not _is_admin(request.user):
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
         contest = self.get_object()
@@ -362,7 +366,7 @@ class ContestViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def destroy(self, request, *args, **kwargs):
-        if not getattr(request.user, "is_admin", False):
+        if not _is_admin(request.user):
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
         contest = self.get_object()

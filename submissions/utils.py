@@ -306,7 +306,11 @@ def get_solution_label(challenge: Challenge) -> str:
     Normalizes SolutionType.type into one of: flag | procedure | both
     """
     raw = (getattr(getattr(challenge, "solution_type", None), "type", "") or "").strip().lower()
-    if raw in {"flag", "procedure", "flag and procedure"}:
+    if raw == "text":
+        return "procedure"
+    if raw in {"flag and procedure", "both"}:
+        return "both"
+    if raw in {"flag", "procedure"}:
         return raw
     # safest default: treat unknown as both? NO — deny by forcing caller to decide.
     return raw
@@ -322,14 +326,14 @@ def one_correct_solution(challenge: Challenge) -> Dict[str, Any]:
     flag_val = None
     proc_val = None
 
-    if sol in ("flag", "flag and procedure"):
+    if sol in ("flag", "both"):
         flag_val = FlagSolution.objects.filter(challenges=challenge).values_list("value", flat=True).first()
 
-    if sol in ("procedure", "flag and procedure"):
+    if sol in ("procedure", "both"):
         proc_val = TextSolution.objects.filter(challenges=challenge).values_list("content", flat=True).first()
 
     return {
-        "solution_type": sol,
+        "solution_type": "flag and procedure" if sol == "both" else sol,
         "flag_solution": flag_val,
         "procedure_solution": proc_val,
     }

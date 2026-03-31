@@ -5,6 +5,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     AdminInviteViewSet,
     MyTokenObtainPairView,
+    ResetPasswordConfirmView,
     UserGroupViewSet,
     UserViewSet,
     VerifyEmailView,
@@ -21,6 +22,7 @@ urlpatterns = [
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     # Student email verification
     path("verify-email/", VerifyEmailView.as_view(), name="verify_email"),
+    path("reset-password/confirm/", ResetPasswordConfirmView.as_view(), name="reset_password_confirm"),
 ]
 
 # Include router URLs

@@ -35,9 +35,20 @@ class EmailVerificationToken(models.Model):
     Backend determines role from this token.
     """
 
+    PURPOSE_EMAIL_VERIFICATION = "email_verification"
+    PURPOSE_PASSWORD_RESET = "password_reset"
+    PURPOSE_ADMIN_INVITE = "admin_invite"
+
+    PURPOSE_CHOICES = (
+        (PURPOSE_EMAIL_VERIFICATION, "Email Verification"),
+        (PURPOSE_PASSWORD_RESET, "Password Reset"),
+        (PURPOSE_ADMIN_INVITE, "Admin Invite"),
+    )
+
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     token = models.UUIDField(default=uuid.uuid4, unique=True)
     role = models.ForeignKey(Role, on_delete=models.PROTECT)
+    purpose = models.CharField(max_length=32, choices=PURPOSE_CHOICES, default=PURPOSE_EMAIL_VERIFICATION)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
 

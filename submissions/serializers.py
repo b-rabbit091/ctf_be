@@ -19,6 +19,34 @@ from . import utils
 from .utils import SolutionUtils
 
 
+def normalize_solution_type_label(raw_value) -> str:
+    label = (str(raw_value or "")).strip().lower()
+    if label == "text":
+        return "procedure"
+    if label in {"flag and procedure", "both"}:
+        return "both"
+    if label in {"flag", "procedure"}:
+        return label
+    return ""
+
+
+def normalize_submission_result(value) -> str | None:
+    if value is None:
+        return None
+
+    if isinstance(value, bool):
+        return "correct" if value else "incorrect"
+
+    label = (str(value or "")).strip().lower()
+    if label in {"correct", "accepted", "solved", "true"}:
+        return "correct"
+    if label in {"incorrect", "wrong", "rejected", "false"}:
+        return "incorrect"
+    if label == "pending":
+        return "pending"
+    return None
+
+
 class BaseSubmissionSerializer(serializers.ModelSerializer):
     """
     Shared validation logic for both flag and text submissions.
@@ -76,9 +104,10 @@ class BaseSubmissionSerializer(serializers.ModelSerializer):
           - status="correct"
           - status="incorrect"
         """
-        if is_correct =="correct":
+        normalized = normalize_submission_result(is_correct)
+        if normalized == "correct":
             status_value = "correct"
-        elif is_correct=="incorrect":
+        elif normalized == "incorrect":
             status_value = "incorrect"
         else:
             status_value = "pending"
@@ -117,9 +146,9 @@ class FlagSubmissionSerializer(BaseSubmissionSerializer):
         # Check that this challenge allows flag submissions
         sol_type = challenge.solution_type  # FK -> SolutionType
         # safer to use the 'type' field: "flag"/"text"/"both"
-        sol_label = (getattr(sol_type, "type", "") or "").lower()
+        sol_label = normalize_solution_type_label(getattr(sol_type, "type", ""))
 
-        if sol_label not in ("flag", "both"):
+        if sol_label not in {"flag", "both"}:
             raise serializers.ValidationError({"challenge_id": "This challenge does not accept flag submissions."})
 
         attrs["challenge_obj"] = challenge
@@ -204,10 +233,9 @@ class TextSubmissionSerializer(BaseSubmissionSerializer):
         challenge, contest = self._get_challenge_and_contest(attrs)
 
         sol_type = challenge.solution_type
-        sol_label = (getattr(sol_type, "type", "") or "").lower()
+        sol_label = normalize_solution_type_label(getattr(sol_type, "type", ""))
 
-        # "flag" only, "text" only, or "both"
-        if sol_label not in ("text", "both"):
+        if sol_label not in {"procedure", "both"}:
             raise serializers.ValidationError({"challenge_id": "This challenge does not accept text submissions."})
 
         attrs["challenge_obj"] = challenge
@@ -311,18 +339,17 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
 
         # Determine allowed types by SolutionType.type
         sol_type = getattr(challenge, "solution_type", None)
-        sol_label = (getattr(sol_type, "type", "") or "").strip().lower()
+        sol_label = normalize_solution_type_label(getattr(sol_type, "type", ""))
 
         allowed = set()
         if sol_label == "flag":
             allowed = {"flag"}
         elif sol_label == "procedure":
             allowed = {"procedure"}
-        elif sol_label == "flag and procedure":
+        elif sol_label == "both":
             allowed = {"flag", "procedure"}
         else:
-            # safest: deny unknown types
-            raise PermissionDenied("Challenge solution_type.type must be one of: flag, text, both.")
+            raise PermissionDenied("Challenge solution_type.type must be one of: flag, procedure, or both.")
 
         if attrs.get("value") and "flag" not in allowed:
             raise serializers.ValidationError({"value": "This challenge does not accept flag submissions."})
@@ -334,9 +361,11 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
 
     def _get_status_for_result(self, is_correct) -> SubmissionStatus:
 
-        if is_correct.lower() == "correct":
+        normalized = normalize_submission_result(is_correct)
+
+        if normalized == "correct":
             status_value = "correct"
-        elif is_correct.lower() =="incorrect":
+        elif normalized == "incorrect":
             status_value = "incorrect"
         else:
             status_value = "pending"
@@ -423,14 +452,12 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
         # PROCEDURE
         if "content" in validated_data:
             content = validated_data["content"]
-            text_solution = SolutionUtils.get_text_solution_for_challenge(challenge)
-            procedure_score = challenge.challenge_score.procedure_score
-            if not procedure_score:
-                procedure_score = 1
+            text_solution = SolutionUtils.get_text_solution_for_challenge(challenge) or {}
+            procedure_score = getattr(challenge.challenge_score, "procedure_score", 0) or 1
 
             score_analyser = None
 
-            exact_val = text_solution.get("value", None)
+            exact_val = text_solution.get("value", None) if isinstance(text_solution, dict) else None
 
             if exact_val is not None and content:
                 try:
@@ -450,7 +477,7 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
             except Exception:
                 user_score = 0
 
-            user_submission_status = getattr(score_analyser, "status", None)
+            user_submission_status = normalize_submission_result(getattr(score_analyser, "status", None))
             status_obj = self._get_status_for_result(user_submission_status)
 
             try:
@@ -462,8 +489,10 @@ class ChallengeSubmissionSerializer(serializers.Serializer):
                     status=status_obj,
                     user_score=int(user_score) if user_score is not None else 0,
                 )
-            except Exception:
-                obj = None
+            except Exception as exc:
+                raise serializers.ValidationError(
+                    {"detail": "Unable to save the procedure submission at this time."}
+                ) from exc
 
             response["results"].append(
                 {
@@ -507,17 +536,17 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
             raise PermissionDenied("You must join a group to submit this challenge.")
 
         sol_type = getattr(challenge, "solution_type", None)
-        sol_label = (getattr(sol_type, "type", "") or "").strip().lower()
+        sol_label = normalize_solution_type_label(getattr(sol_type, "type", ""))
 
         allowed = set()
         if sol_label == "flag":
             allowed = {"flag"}
         elif sol_label == "procedure":
             allowed = {"procedure"}
-        elif sol_label == "flag and procedure":
+        elif sol_label == "both":
             allowed = {"flag", "procedure"}
         else:
-            raise PermissionDenied("Challenge solution_type.type must be one of: flag, procedure, both.")
+            raise PermissionDenied("Challenge solution_type.type must be one of: flag, procedure, or both.")
 
         if attrs.get("value") and "flag" not in allowed:
             raise serializers.ValidationError({"value": "This challenge does not accept flag submissions."})
@@ -641,7 +670,7 @@ class GroupChallengeSubmissionSerializer(serializers.Serializer):
             try:
                 group_score = getattr(score_analyser, "score", None)
                 group_score = int(group_score) if group_score is not None else 0
-                user_submission_status = getattr(score_analyser, "status", None)
+                user_submission_status = normalize_submission_result(getattr(score_analyser, "status", None))
                 status_obj = self._get_status_for_result(user_submission_status)
 
             except Exception:

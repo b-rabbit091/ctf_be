@@ -1,4 +1,6 @@
 # users/serializers.py
+from django.contrib.auth.password_validation import validate_password
+from django.db import IntegrityError
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -19,6 +21,32 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = ("id", "first_name", "last_name", "username", "email", "is_active", "date_joined", "last_login", "role_name")
         extra_kwargs = {"password": {"write_only": True}}
 
+    def validate_username(self, value):
+        username = (value or "").strip()
+        if len(username) < 3:
+            raise serializers.ValidationError("Username must be at least 3 characters.")
+        if User.objects.filter(username__iexact=username).exists():
+            raise serializers.ValidationError("This username is already in use.")
+        return username
+
+    def validate_email(self, value):
+        email = (value or "").strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError("This email is already in use.")
+        return email
+
+    def validate_first_name(self, value):
+        first_name = (value or "").strip()
+        if not first_name:
+            raise serializers.ValidationError("First name is required.")
+        return first_name
+
+    def validate_last_name(self, value):
+        last_name = (value or "").strip()
+        if not last_name:
+            raise serializers.ValidationError("Last name is required.")
+        return last_name
+
     def create(self, validated_data):
         student_role = Role.objects.get(name="student")
         user = User(
@@ -29,7 +57,10 @@ class RegisterSerializer(serializers.ModelSerializer):
             role=student_role,
             is_active=False,
         )
-        user.save()
+        try:
+            user.save()
+        except IntegrityError as exc:
+            raise serializers.ValidationError({"detail": "Unable to create the account with the provided details."}) from exc
         return user
 
 
@@ -91,8 +122,19 @@ class ChangePasswordSerializer(serializers.Serializer):
     def validate(self, attrs):
         if attrs["new_password"] != attrs["confirm_password"]:
             raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
-        if len(attrs["new_password"]) < 8:
-            raise serializers.ValidationError({"new_password": "Password must be at least 8 characters."})
+        validate_password(attrs["new_password"])
+        return attrs
+
+
+class SetPasswordWithTokenSerializer(serializers.Serializer):
+    token = serializers.UUIDField()
+    password = serializers.CharField(write_only=True, required=True, trim_whitespace=False)
+    confirm_password = serializers.CharField(write_only=True, required=True, trim_whitespace=False)
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+        validate_password(attrs["password"])
         return attrs
 
 

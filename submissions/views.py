@@ -339,7 +339,7 @@ class ReportViewSet(viewsets.ViewSet):
         )
 
         sol_label = get_solution_label(challenge)
-        if sol_label not in {"flag", "procedure", "flag and procedure"}:
+        if sol_label not in {"flag", "procedure", "both"}:
             # strict validation to avoid “unknown = leak something”
             raise ValidationError({"solution_type": f"Unsupported solution_type.type='{sol_label}'. Expected flag/procedure/both."})
 
@@ -358,7 +358,7 @@ class ReportViewSet(viewsets.ViewSet):
                 "challenge": {
                     "id": challenge.id,
                     "title": challenge.title,
-                    "solution_type": sol_label,
+                    "solution_type": "flag and procedure" if sol_label == "both" else sol_label,
                     "group_only": challenge.contests.filter(group_only=True).exists(),
                 },
                 "count": len(rows),
@@ -411,11 +411,11 @@ class ReportViewSet(viewsets.ViewSet):
         flag_qs = UserFlagSubmission.objects.none()
         proc_qs = UserTextSubmission.objects.none()
 
-        if sol_label in ("flag", "flag and procedure"):
+        if sol_label in ("flag", "both"):
             flag_qs = UserFlagSubmission.objects.select_related("user", "status").filter(challenge=challenge)
             flag_qs = apply_time_window(flag_qs, dt_from, dt_to)
 
-        if sol_label in ("procedure", "flag and procedure"):
+        if sol_label in ("procedure", "both"):
             proc_qs = UserTextSubmission.objects.select_related("user", "status").filter(challenge=challenge)
             proc_qs = apply_time_window(proc_qs, dt_from, dt_to)
 
@@ -480,11 +480,11 @@ class ReportViewSet(viewsets.ViewSet):
         flag_qs = GroupFlagSubmission.objects.none()
         proc_qs = GroupTextSubmission.objects.none()
 
-        if sol_label in ("flag", "flag and procedure"):
+        if sol_label in ("flag", "both"):
             flag_qs = GroupFlagSubmission.objects.select_related("group", "status", "submitted_by").filter(challenge=challenge)
             flag_qs = apply_time_window(flag_qs, dt_from, dt_to)
 
-        if sol_label in ("procedure", "flag and procedure"):
+        if sol_label in ("procedure", "both"):
             proc_qs = GroupTextSubmission.objects.select_related("group", "status", "submitted_by").filter(challenge=challenge)
             proc_qs = apply_time_window(proc_qs, dt_from, dt_to)
 
@@ -548,14 +548,15 @@ class ReportViewSet(viewsets.ViewSet):
         row_prefix: str,
     ) -> List[Dict[str, Any]]:
         rows: List[Dict[str, Any]] = []
+        response_solution_type = "flag and procedure" if sol_label == "both" else sol_label
 
         for entity_id, b in buckets.items():
             flag_attempts: List[Dict[str, Any]] = b.get("flag_attempts", [])
             proc_attempts: List[Dict[str, Any]] = b.get("procedure_attempts", [])
 
             # Best per type
-            best_flag = best_score(flag_attempts) if sol_label in ("flag", "flag and procedure") else 0
-            best_proc = best_score(proc_attempts) if sol_label in ("procedure", "flag and procedure") else 0
+            best_flag = best_score(flag_attempts) if sol_label in ("flag", "both") else 0
+            best_proc = best_score(proc_attempts) if sol_label in ("procedure", "both") else 0
 
             # Latest per type (so admin can see what happened most recently per channel)
             latest_flag = latest_attempt(flag_attempts) if flag_attempts else None
@@ -574,7 +575,7 @@ class ReportViewSet(viewsets.ViewSet):
                     "row_id": f"{row_prefix}-{entity_id}",
                     "entity_type": b["entity_type"],
                     "entity": b["entity"],
-                    "solution_type": sol_label,
+                    "solution_type": response_solution_type,
                     # Table-friendly summary (separate scores)
                     "summary": {
                         "flag": {
