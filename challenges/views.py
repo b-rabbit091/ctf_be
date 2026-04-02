@@ -2,7 +2,7 @@ from rest_framework import viewsets, permissions, status
 from .models import Challenge, Category, Difficulty, SolutionType
 from .permissions import IsAdminOrReadOnly
 from .serializers import ChallengeDetailSerializer, ChallengeListSerializer, CategorySerializer, \
-    DifficultySerializer, SolutionTypeSerializer, ChallengeUpdateSerializer
+    DifficultySerializer, SolutionTypeSerializer, ChallengeUpdateSerializer, ChallengeCreateSerializer
 from rest_framework.response import Response
 
 
@@ -17,9 +17,6 @@ class ChallengeViewSet(viewsets.ModelViewSet):
         return ChallengeListSerializer
 
     def get_queryset(self):
-        """
-        Optionally filter by type, category, or difficulty
-        """
         queryset = Challenge.objects.all().order_by('-created_at')
         q_type = self.request.query_params.get("type")
         category = self.request.query_params.get("category")
@@ -32,6 +29,18 @@ class ChallengeViewSet(viewsets.ModelViewSet):
         if difficulty:
             queryset = queryset.filter(difficulty=difficulty)
         return queryset
+
+    def create(self, request, *args, **kwargs):
+        """Allow only admin to create challenge"""
+        if not request.user.is_admin:
+            return Response(
+                {"detail": "You do not have permission to perform this action."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        serializer = ChallengeCreateSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         """Allow only admin to update challenge"""
