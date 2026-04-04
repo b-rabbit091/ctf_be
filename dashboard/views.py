@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from challenges.models import Challenge, Contest
-from submissions.models import SubmissionStatus, UserFlagSubmission, UserTextSubmission
+from submissions.models import UserFlagSubmission, UserTextSubmission
 
 from .permissions import IsAdminOnly
 
@@ -28,6 +28,19 @@ class DashboardOverviewView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    SOLVED_STATUSES = ("correct", "solved")
+
+    def _submission_scope_filter(self, question_type: str | None = None) -> Q:
+        """
+        Keep dashboard buckets resilient to legacy data:
+        - practice: explicit practice challenges OR submissions without contest
+        - competition: explicit competition challenges OR submissions with contest
+        """
+        if question_type == "practice":
+            return Q(challenge__question_type="practice") | Q(contest__isnull=True)
+        if question_type == "competition":
+            return Q(challenge__question_type="competition") | Q(contest__isnull=False)
+        return Q()
 
     def get_solved_challenge_ids(
         self,
@@ -35,15 +48,16 @@ class DashboardOverviewView(APIView):
         question_type: str | None = None,
     ) -> Set[int]:
         """
-        Return a set of challenge IDs that the user has solved
-        (based on SubmissionStatus.status == 'solved').
+        Return a set of challenge IDs that the user has solved.
 
         If question_type is provided ('practice' or 'competition'),
-        limit to challenges of that type.
+        limit to challenges in that scope.
         """
-        base_filter = Q(user=user) & Q(status__status__iexact="solved")
-        if question_type:
-            base_filter &= Q(challenge__question_type=question_type)
+        solved_status_filter = Q()
+        for status in self.SOLVED_STATUSES:
+            solved_status_filter |= Q(status__status__iexact=status)
+
+        base_filter = Q(user=user) & solved_status_filter & self._submission_scope_filter(question_type)
 
         flag_ids = UserFlagSubmission.objects.filter(base_filter).values_list("challenge_id", flat=True).distinct()
         text_ids = UserTextSubmission.objects.filter(base_filter).values_list("challenge_id", flat=True).distinct()
@@ -55,12 +69,10 @@ class DashboardOverviewView(APIView):
         question_type: str | None = None,
     ) -> Set[int]:
         """
-        Return a set of challenge IDs that the user has *attempted* (any submission),
+        Return a set of challenge IDs that the user has attempted (any submission),
         regardless of correctness.
         """
-        base_filter = Q(user=user)
-        if question_type:
-            base_filter &= Q(challenge__question_type=question_type)
+        base_filter = Q(user=user) & self._submission_scope_filter(question_type)
 
         flag_ids = UserFlagSubmission.objects.filter(base_filter).values_list("challenge_id", flat=True).distinct()
         text_ids = UserTextSubmission.objects.filter(base_filter).values_list("challenge_id", flat=True).distinct()
@@ -303,6 +315,7 @@ class AdminDashboardTotalsView(APIView):
     """
 
     permission_classes = [IsAdminOnly]
+    SOLVED_STATUSES = DashboardOverviewView.SOLVED_STATUSES
 
     def get(self, request, *args, **kwargs):
         now = timezone.now()
@@ -335,13 +348,13 @@ class AdminDashboardTotalsView(APIView):
         total_text_submissions = UserTextSubmission.objects.count()
         total_submissions = total_flag_submissions + total_text_submissions
 
-        solved_status = SubmissionStatus.objects.filter(status__iexact="solved").first()
-        if solved_status:
-            solved_flag = UserFlagSubmission.objects.filter(status=solved_status).count()
-            solved_text = UserTextSubmission.objects.filter(status=solved_status).count()
-            solved_submissions = solved_flag + solved_text
-        else:
-            solved_submissions = 0
+        solved_status_filter = Q()
+        for solved_status in self.SOLVED_STATUSES:
+            solved_status_filter |= Q(status__status__iexact=solved_status)
+
+        solved_flag = UserFlagSubmission.objects.filter(solved_status_filter).count()
+        solved_text = UserTextSubmission.objects.filter(solved_status_filter).count()
+        solved_submissions = solved_flag + solved_text
 
         distinct_submitters = UserFlagSubmission.objects.values("user_id").distinct().count() + UserTextSubmission.objects.values("user_id").distinct().count()
 
