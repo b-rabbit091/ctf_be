@@ -24,7 +24,17 @@ class ChatRequestSerializer(serializers.Serializer):
         if challenge_id <= 0:
             raise serializers.ValidationError({"context": "challenge_id must be a positive integer."})
 
+        challenge_category = (
+            ctx.get("challenge_category")
+            or ctx.get("challengeCategory")
+            or ctx.get("category")
+            or None
+        )
+        if challenge_category is not None:
+            challenge_category = str(challenge_category).strip() or None
+
         attrs["challenge_id"] = challenge_id
+        attrs["challenge_category"] = challenge_category
         attrs["context"] = ctx
         return attrs
 
