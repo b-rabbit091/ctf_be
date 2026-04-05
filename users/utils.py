@@ -1,10 +1,14 @@
 # users/utils.py
+import smtplib
 import uuid
+from email.message import EmailMessage
+from email.utils import parseaddr
 from smtplib import SMTPException
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
+from rest_framework import status
+from rest_framework.response import Response
 
 from users.models import Group, UserGroup
 
@@ -16,18 +20,31 @@ class EmailDeliveryError(Exception):
 
 
 def _send_platform_email(subject: str, message: str, recipient_list: list[str]) -> None:
+    from_email = parseaddr(settings.DEFAULT_FROM_EMAIL)[1] or settings.DEFAULT_FROM_EMAIL
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = settings.DEFAULT_FROM_EMAIL
+    msg["To"] = ", ".join(recipient_list)
+    msg.set_content(message)
+
+    server = None
     try:
-        send_mail(
-            subject,
-            message,
-            settings.DEFAULT_FROM_EMAIL,
-            recipient_list,
-            fail_silently=False,
-        )
+        if settings.EMAIL_USE_SSL:
+            server = smtplib.SMTP_SSL(settings.EMAIL_HOST, settings.EMAIL_PORT, timeout=15)
+        else:
+            server = smtplib.SMTP(settings.EMAIL_HOST, settings.EMAIL_PORT, timeout=15)
+
+        server.send_message(msg, from_addr=from_email, to_addrs=recipient_list)
     except Exception as exc:
         if isinstance(exc, SMTPException):
-            raise EmailDeliveryError("Unable to deliver email right now.") from exc
-        raise EmailDeliveryError("Unable to deliver email right now.") from exc
+            raise EmailDeliveryError(f"Unable to deliver email right now. SMTP error: {exc}") from exc
+        raise EmailDeliveryError(f"Unable to deliver email right now. Error: {exc}") from exc
+    finally:
+        if server is not None:
+            try:
+                server.quit()
+            except Exception:
+                pass
 
 
 def send_verification_email(user, token, role_name):
