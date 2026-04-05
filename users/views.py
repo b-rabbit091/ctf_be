@@ -641,6 +641,8 @@ class UserGroupViewSet(viewsets.ModelViewSet):
                 {"error": "Admin cannot remove themselves from the group."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        group_membership  = GroupInvitation.objects.filter(group=group, user_id=user_id)
+        group_membership.delete()
 
         membership.delete()
         return Response({"detail": "Member removed from group."}, status=status.HTTP_200_OK)
@@ -791,9 +793,7 @@ class UserGroupViewSet(viewsets.ModelViewSet):
 
             if invite.status != GroupInvitation.STATUS_PENDING:
                 return Response({"error": "Invitation is not pending."}, status=status.HTTP_400_BAD_REQUEST)
-
-            invite.status = GroupInvitation.STATUS_DECLINED
-            invite.save(update_fields=["status"])
+            invite.delete()
 
         return Response({"detail": "Invitation declined."}, status=status.HTTP_200_OK)
 
