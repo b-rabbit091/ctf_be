@@ -21,6 +21,13 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
 # BASE_URL = "http://localhost"
 BASE_URL = "https://cite8.nwmissouri.edu/ctf"
 
@@ -144,8 +151,8 @@ DATABASES = {
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = os.getenv("SMTP_SERVER")
 EMAIL_PORT = int(os.getenv("SMTP_PORT", "25"))
-EMAIL_USE_TLS = os.getenv("SMTP_USE_TLS")
-EMAIL_USE_SSL = os.getenv("SMTP_USE_SSL")
+EMAIL_USE_TLS = _env_bool("SMTP_USE_TLS", _env_bool("USE_TLS", False))
+EMAIL_USE_SSL = _env_bool("SMTP_USE_SSL", _env_bool("USE_SSL", False))
 EMAIL_HOST_USER = os.getenv("SMTP_USERNAME", "")
 _from_email = os.getenv("SMTP_SENDER_EMAIL", "")
 _from_name = os.getenv("SMTP_SENDER_NAME", "")
