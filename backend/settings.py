@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 import os
 from datetime import timedelta
+from email.utils import formataddr
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -136,14 +137,16 @@ DATABASES = {
 # }
 
 
-# settings.py
+# Email
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = "smtp.gmail.com"
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
-DEFAULT_FROM_EMAIL = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST = os.getenv("SMTP_SERVER")
+EMAIL_PORT = int(os.getenv("SMTP_PORT", "25"))
+EMAIL_USE_TLS = os.getenv("SMTP_USE_TLS")
+EMAIL_USE_SSL = os.getenv("SMTP_USE_SSL")
+EMAIL_HOST_USER = os.getenv("SMTP_USERNAME", "")
+_from_email = os.getenv("SMTP_SENDER_EMAIL", "")
+_from_name = os.getenv("SMTP_SENDER_NAME", "")
+DEFAULT_FROM_EMAIL = formataddr((_from_name, _from_email)) if _from_name and _from_email else _from_email
 
 # REST Framework + JWT
 REST_FRAMEWORK = {
