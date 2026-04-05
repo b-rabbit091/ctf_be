@@ -15,8 +15,11 @@ from datetime import timedelta
 from email.utils import formataddr
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 # BASE_URL = "http://localhost"
 BASE_URL = "https://cite8.nwmissouri.edu/ctf"
