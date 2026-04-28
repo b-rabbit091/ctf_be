@@ -21,7 +21,7 @@ Please ensure you have the following installed:
 ---
 
 ### 1. Clone the Repository
-Active branch : v1.0
+Active branch : always pull the branch that is committed last.
 ```bash
 git clone git@github.com:b-rabbit091/ctf_be.git
 cd ctf_be
@@ -29,6 +29,7 @@ cd ctf_be
 
 ### 2. Environment variables
 Create a `.env` file inside the `ctf_be/` directory. Replace with corresponding values.
+or Get .env file from server and replace with local gemini api key and model
 
 ```
 DEBUG=1
